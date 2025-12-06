@@ -1,26 +1,35 @@
-use std::fs;
-use std::path::Path;
 use fastembed::TextEmbedding;
 use rayon::prelude::*;
+use std::fs;
+use std::path::Path;
+use unidecode::unidecode;
 
 
-pub fn extract_text(filenames: Vec<&str>) {
-    filenames.par_iter()
-    .for_each(|file| {
-        let bytes = std::fs::read(file).unwrap();
-        let mut text = pdf_extract::extract_text_from_mem(&bytes).unwrap();
-
-        //dbg!(&text);
-
-        let cleaned = text.as_mut_str()
-            .split('\n')              // Split on \n (discards the \n)
-            .map(|s| s.trim())        // Trim each piece
-            .filter(|s| !s.is_empty()) // Remove empties
-            .collect::<Vec<_>>()
-            .join(" "); 
-
-        dbg!(cleaned);
-    });
-    
+pub struct File {
+    filename: String,
+    pub text: String,
 }
 
+pub fn extract_text(filenames: Vec<&str>) -> Vec<File>{
+    let v: Vec<File> = filenames
+    .par_iter()
+    .map(|filename| {
+        let bytes = std::fs::read(filename).unwrap();
+        let text = pdf_extract::extract_text_from_mem(&bytes).unwrap();
+
+        let cleaned = unidecode(&text)
+            .split('\n')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        
+        File {
+            filename: filename.to_string(),
+            text: cleaned,
+        }
+    })
+    .collect();
+
+    v
+}
