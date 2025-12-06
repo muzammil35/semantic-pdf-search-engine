@@ -4,6 +4,8 @@ use clap::Parser;
 use clap::{arg, ArgAction};
 use clap::{command, Arg};
 
+
+pub mod extract;
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -33,6 +35,9 @@ fn main() {
         .collect::<Vec<_>>();
 
     println!("file paths: {:?}", &args);
+
+    // extract and embed
+    extract::extract_text(args);
 }
 
 pub fn main_() {
