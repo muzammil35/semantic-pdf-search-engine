@@ -5,6 +5,7 @@ use clap::{ArgAction, arg};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use lopdf::{Document, Object, ObjectId};
 
+pub mod chunk__;
 pub mod chunk;
 pub mod extract;
 
@@ -36,9 +37,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     println!("file paths: {:?}", &args);
 
     // extract and embed
+    println!("extracting text");
     let res = extract::extract_text(args);
-
-   let parent_chunks = chunk::create_chunks(res[0].text.clone(), None);
+    
+    println!("getting text chunks");
+    let parent_chunks = chunk::create_chunks(res[0].text.as_str(), None);
     println!("{:?}", parent_chunks[0]);
 
     let doc = Document::load("soc.pdf")?;
