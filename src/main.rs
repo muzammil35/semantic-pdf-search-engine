@@ -8,6 +8,7 @@ use lopdf::{Document, Object, ObjectId};
 pub mod chunk__;
 pub mod chunk;
 pub mod extract;
+pub mod render;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -18,7 +19,13 @@ struct Args {
     file: String,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>>{
+fn main() {
+    let home = dirs::home_dir().unwrap();
+    println!("User home directory: {}", home.display());
+    let _ = render::render();
+}
+
+fn main_() -> Result<(), Box<dyn std::error::Error>>{
     let matches = command!() // requires `cargo` feature
         .arg(
             Arg::new("file")
@@ -41,8 +48,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     let res = extract::extract_text(args);
     
     println!("getting text chunks");
-    let parent_chunks = chunk::create_chunks(res[0].text.as_str(), None);
-    println!("{:?}", parent_chunks[0]);
+    //let parent_chunks = chunk::create_chunks(res[0].text.as_str(), None);
+    //println!("{:?}", parent_chunks[0]);
 
     let doc = Document::load("soc.pdf")?;
     

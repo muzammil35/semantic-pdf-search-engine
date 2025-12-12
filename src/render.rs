@@ -19,6 +19,7 @@ pub fn render() -> Result<(), eframe::Error> {
 }
 
 struct PdfViewerApp {
+    pdfium: Pdfium,
     pdf_path: String,
     document: Option<PdfDocument<'static>>,
     current_page: usize,
@@ -30,8 +31,9 @@ struct PdfViewerApp {
 impl Default for PdfViewerApp {
     fn default() -> Self {
         Self {
-            pdf_path: String::new(),
-            document: None,
+            pdfium: Pdfium::default(),  
+            document: None,  
+            pdf_path: "/Users/muzammilarshad/rust/vb/src/soc.pdf".to_string(),
             current_page: 0,
             total_pages: 0,
             rendered_image: None,
@@ -41,12 +43,13 @@ impl Default for PdfViewerApp {
 }
 
 impl PdfViewerApp {
-    fn load_pdf(&mut self, pdfium: Pdfium) {
+
+    fn load_pdf(&mut self) {
         self.error_message = None;
 
         
         // Load the PDF
-        let document = match pdfium.load_pdf_from_file(&self.pdf_path, None) {
+        let document = match self.pdfium.load_pdf_from_file(&self.pdf_path, None) {
             Ok(doc) => doc,
             Err(e) => {
                 self.error_message = Some(format!("Failed to load PDF: {}", e));
@@ -55,7 +58,7 @@ impl PdfViewerApp {
         };
         
         self.total_pages = document.pages().len() as usize;
-        self.current_page = 0;
+        self.current_page = 500;
         
         // Store pdfium and document (need unsafe due to lifetime)
         // In production, use a better approach with Rc/Arc
@@ -99,6 +102,7 @@ impl PdfViewerApp {
                     }
                     Err(e) => {
                         self.error_message = Some(format!("Failed to render page: {}", e));
+                        println!("{:?}", self.error_message);
                     }
                 }
             }
@@ -130,16 +134,8 @@ impl PdfViewerApp {
 impl eframe::App for PdfViewerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("PDF Path:");
-                ui.text_edit_singleline(&mut self.pdf_path);
-                
-                if ui.button("Load PDF").clicked() {
-                    let pdfium = Pdfium::default();
-                    self.load_pdf(pdfium);
-                }
-            });
-            
+            self.load_pdf();
+
             if let Some(ref error) = self.error_message {
                 ui.colored_label(egui::Color32::RED, error);
             }
