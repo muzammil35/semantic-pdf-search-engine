@@ -13,7 +13,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct File {
     filename: String,
-    pages: Vec<String>,
+    pub pages: Vec<String>,
 }
 
 pub fn extract_text_lopdf(filenames: Vec<&str>) -> Vec<File> {
@@ -96,27 +96,6 @@ pub fn extract_text(filenames: Vec<&str>) -> Vec<File> {
 }
 
 
-
-
-fn clean_text(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut last_was_space = true;
-    
-    for c in text.chars() {
-        if c.is_whitespace() {
-            if !last_was_space {
-                result.push(' ');
-                last_was_space = true;
-            }
-        } else if c.is_ascii() {
-            result.push(c);
-            last_was_space = false;
-        }
-        // Skip non-ASCII characters entirely (or handle differently)
-    }
-    
-    result.trim().to_string()
-}
 
 #[cfg(test)]
 mod tests {
