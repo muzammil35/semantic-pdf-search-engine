@@ -4,9 +4,17 @@ use clap::{Arg, command};
 use clap::{ArgAction, arg};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use lopdf::{Document, Object, ObjectId};
-
+use qdrant_client::Qdrant;
+use qdrant_client::QdrantError;
+use qdrant_client::qdrant::Distance;
+use qdrant_client::qdrant::UpsertPointsBuilder;
+use qdrant_client::qdrant::{CreateCollectionBuilder, VectorParamsBuilder};
+use qdrant_client::qdrant::{PointStruct, Value};
+use std::collections::HashMap;
+use std::io::{self, Write};
 
 pub mod chunk;
+pub mod embed;
 pub mod extract;
 pub mod render;
 
@@ -25,11 +33,15 @@ fn main_() {
     let _ = render::render();
 }
 
-use std::io::{self, Write};
+#[tokio::main]
+async fn main()  {
+    let result = run().await;
+    println!("{:?}", result);
+}
 
-fn main() -> Result<(), Box<dyn std::error::Error>>{
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        let matches = command!() // requires `cargo` feature
+        let matches = command!()
             .arg(
                 Arg::new("file")
                     .short('f')
@@ -48,6 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
             Ok(m) => m,
             Err(e) => {
                 eprintln!("{}", e);
+                prompt_for_next()?;
                 continue;
             }
         };
@@ -64,13 +77,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
         if let Some(file_paths) = file_args {
             println!("file paths: {:?}", &file_paths);
 
-            // extract and embed
             println!("extracting text");
             let res = extract::extract_text(file_paths);
-            
+
             println!("getting text chunks");
-            let parent_chunks = chunk::create_chunks(&res[0].pages);
-            println!("{:?}", &parent_chunks[2..50]);
+            let chunks = chunk::create_chunks(&res[0].pages);
+
+            println!("getting embedded chunks");
+            let embedded_chunks = embed::get_embeddings(chunks)?;
+
+            println!("getting client");
+            let client = setup_qdrant(&embedded_chunks).await?;
+            println!("got client");
+
+            println!("getting response");
+            let response = store_embeddings(&client, "test_collection3", embedded_chunks).await?;
+            dbg!(response);
         }
 
         // Handle search command
@@ -79,18 +101,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
             // Add your search logic here
         }
 
-        // Prompt for next command
-        print!("\nEnter command (or Ctrl+C to exit): ");
-        io::stdout().flush()?;
-        
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        
-        // Break if input is empty (allows clean exit)
-        if input.trim().is_empty() {
-            continue;
-        }
+        prompt_for_next()?;
     }
+}
+
+fn prompt_for_next() -> Result<(), Box<dyn std::error::Error>> {
+    print!("\nEnter command (or Ctrl+C to exit): ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
     
     Ok(())
 }
@@ -98,3 +118,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
 
 
 
+async fn setup_qdrant(embedded_chunks: &embed::Embeddings) -> Result<Qdrant, QdrantError> {
+    let client = Qdrant::from_url("http://localhost:6334").build()?;
+
+    client
+        .create_collection(
+            CreateCollectionBuilder::new("test_collection3").vectors_config(
+                VectorParamsBuilder::new(embedded_chunks.get_dim() as u64, Distance::Dot),
+            ),
+        )
+        .await?;
+
+    Ok(client)
+}
+
+async fn store_embeddings(
+    client: &Qdrant,
+    collection_name: &str,
+    embeddings: embed::Embeddings,
+) -> Result<(), QdrantError> {
+    // Ensure both vectors have the same length
+    assert_eq!(
+        embeddings.original.len(),
+        embeddings.embedded.len(),
+        "Original and embedded vectors must have the same length"
+    );
+
+    let points: Vec<PointStruct> = embeddings
+        .original
+        .into_iter()
+        .zip(embeddings.embedded)
+        .enumerate()
+        .map(|(id, (chunk, embedding))| {
+            // Create payload with original chunk data from Embeddings.original
+            let mut payload = HashMap::new();
+            payload.insert("text".to_string(), Value::from(chunk.content.clone()));
+            // Add any other chunk fields you want to store
+
+            PointStruct::new(
+                id as u64, // Use index as ID
+                embedding, payload,
+            )
+        })
+        .collect();
+
+    // Insert points into collection
+    let response = client
+        .upsert_points(UpsertPointsBuilder::new("test_collection3", points).wait(true))
+        .await?;
+    dbg!(response);
+
+    Ok(())
+}

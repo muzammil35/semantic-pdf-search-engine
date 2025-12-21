@@ -1,17 +1,15 @@
+use crate::extract::File;
 use rayon::prelude::*;
 use uuid::Uuid;
-use crate::extract::File;
-
-
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
     id: String,
-    content: String,
+    pub content: String,
     page: u16,
 }
 
-pub fn create_chunks(pages:&Vec<String>) -> Vec<Chunk> {
+pub fn create_chunks(pages: &Vec<String>) -> Vec<Chunk> {
     let max_token_size = 500;
 
     // Process pages in parallel and collect all chunks
@@ -23,7 +21,6 @@ pub fn create_chunks(pages:&Vec<String>) -> Vec<Chunk> {
             chunk_page(cleaned, page_idx as u16, max_token_size)
         })
         .collect()
-
 }
 
 fn chunk_page(content: String, page_num: u16, max_size: usize) -> Vec<Chunk> {
@@ -133,11 +130,10 @@ fn split_large_section(section: &str, max_size: usize) -> Vec<String> {
     result
 }
 
-
 fn clean_text(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut last_was_space = true;
-    
+
     for c in text.chars() {
         if c.is_whitespace() {
             if !last_was_space {
@@ -150,7 +146,7 @@ fn clean_text(text: &str) -> String {
         }
         // Skip non-ASCII characters entirely (or handle differently)
     }
-    
+
     result.trim().to_string()
 }
 
@@ -158,10 +154,3 @@ fn clean_text(text: &str) -> String {
 fn estimate_tokens(text: &str) -> usize {
     (text.len() as f32 / 4.0).ceil() as usize
 }
-
-
- 
-
-
-    
-    
