@@ -92,17 +92,4 @@ pub fn extract_text(filenames: Vec<&str>) -> Vec<File> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_extract_text_single_file() {
-        // Create a test PDF file (you'll need a sample PDF in your test fixtures)
-        let filenames = vec!["src/soc.pdf"];
-
-        let results = extract_text_lopdf(filenames);
-
-        println!("{:?}", results[0].pages[48]);
-    }
-}
