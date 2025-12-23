@@ -24,8 +24,6 @@ pub fn extract_text_lopdf(filenames: Vec<&str>) -> Vec<File> {
             let pages_map = document.get_pages();
             let page_numbers: Vec<u32> = pages_map.keys().cloned().collect();
 
-            println!("Processing {} with {} pages", filename, page_numbers.len());
-
             // Wrap in Arc to share across threads
             let document = Arc::new(document);
 
@@ -55,11 +53,6 @@ pub fn extract_text(filenames: Vec<&str>) -> Vec<File> {
             // Calculate optimal chunk size based on available threads
             let num_threads = rayon::current_num_threads();
             let chunk_size = (page_count / num_threads).max(1);
-
-            println!(
-                "Processing {} pages in chunks of {}",
-                page_count, chunk_size
-            );
 
             // Process pages in parallel chunks
             let page_texts: Vec<String> = (0..page_count)
@@ -91,5 +84,3 @@ pub fn extract_text(filenames: Vec<&str>) -> Vec<File> {
         })
         .collect()
 }
-
-

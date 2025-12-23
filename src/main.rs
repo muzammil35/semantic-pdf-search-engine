@@ -34,7 +34,17 @@ fn main_() {
 }
 
 #[tokio::main]
-async fn main()  {
+async fn main() {
+    let banner = r#"
+ ██████╗ ██╗   ██╗███████╗██████╗ ██╗   ██╗
+██╔═══██╗██║   ██║██╔════╝██╔══██╗╚██╗ ██╔╝
+██║   ██║██║   ██║█████╗  ██████╔╝ ╚████╔╝ 
+██║▄▄ ██║██║   ██║██╔══╝  ██╔══██╗  ╚██╔╝  
+╚██████╔╝╚██████╔╝███████╗██║  ██║   ██║   
+ ╚══▀▀═╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝   ╚═╝   
+"#;
+
+    println!("{}", banner);
     let result = run().await;
     println!("{:?}", result);
 }
@@ -75,22 +85,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         // Handle file command
         if let Some(file_paths) = file_args {
-            println!("file paths: {:?}", &file_paths);
 
-            println!("extracting text");
             let res = extract::extract_text(file_paths);
-
-            println!("getting text chunks");
             let chunks = chunk::create_chunks(&res[0].pages);
-
-            println!("getting embedded chunks");
+            println!("Embedding");
             let embedded_chunks = embed::get_embeddings(chunks)?;
-
             println!("getting client");
             let client = setup_qdrant(&embedded_chunks).await?;
-            println!("got client");
-
-            println!("getting response");
             let response = store_embeddings(&client, "test_collection3", embedded_chunks).await?;
             dbg!(response);
         }
@@ -98,7 +99,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Handle search command
         if let Some(search_paths) = search_args {
             println!("search paths: {:?}", &search_paths);
-            // Add your search logic here
+            
         }
 
         prompt_for_next()?;
@@ -111,12 +112,9 @@ fn prompt_for_next() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    
+
     Ok(())
 }
-
-
-
 
 async fn setup_qdrant(embedded_chunks: &embed::Embeddings) -> Result<Qdrant, QdrantError> {
     let client = Qdrant::from_url("http://localhost:6334").build()?;
