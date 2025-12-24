@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
-    id: String,
     pub content: String,
     page: u16,
 }
@@ -43,7 +42,6 @@ fn chunk_page(content: String, page_num: u16, max_size: usize) -> Vec<Chunk> {
             // Save current chunk if it has content
             if !current_chunk.is_empty() {
                 chunks.push(Chunk {
-                    id: Uuid::new_v4().to_string(),
                     content: current_chunk.trim().to_string(),
                     page: page_num,
                 });
@@ -55,7 +53,6 @@ fn chunk_page(content: String, page_num: u16, max_size: usize) -> Vec<Chunk> {
             let sub_chunks = split_large_section(section, max_size);
             for sub in sub_chunks {
                 chunks.push(Chunk {
-                    id: Uuid::new_v4().to_string(),
                     content: sub,
                     page: page_num,
                 });
@@ -66,7 +63,6 @@ fn chunk_page(content: String, page_num: u16, max_size: usize) -> Vec<Chunk> {
         // If adding this section would exceed max_size, save current chunk
         if current_tokens + section_tokens > max_size && !current_chunk.is_empty() {
             chunks.push(Chunk {
-                id: Uuid::new_v4().to_string(),
                 content: current_chunk.trim().to_string(),
                 page: page_num,
             });
@@ -85,7 +81,6 @@ fn chunk_page(content: String, page_num: u16, max_size: usize) -> Vec<Chunk> {
     // Save final chunk
     if !current_chunk.is_empty() {
         chunks.push(Chunk {
-            id: Uuid::new_v4().to_string(),
             content: current_chunk.trim().to_string(),
             page: page_num,
         });
