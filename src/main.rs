@@ -1,11 +1,19 @@
 use clap::{Arg, Parser, command, arg};
 use std::io::{self, Write};
 use qdrant_client::Qdrant;
+use std::fs;
+
+use axum::{
+    Router,
+    routing::get,
+    response::Html,
+    Json,
+};
+use serde::Serialize;
 
 pub mod chunk;
 pub mod embed;
 pub mod extract;
-pub mod render;
 pub mod qdrant;
 
 /// Simple program to greet a person
@@ -15,12 +23,6 @@ struct Args {
     /// file path to be stored
     #[arg(short, long)]
     file: String,
-}
-
-fn main_() {
-    let home = dirs::home_dir().unwrap();
-    println!("User home directory: {}", home.display());
-    let _ = render::render();
 }
 
 #[tokio::main]
@@ -41,6 +43,7 @@ async fn main() {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     loop {
+        println!(">");
         let matches = command!()
             .arg(Arg::new("file").short('f').long("file"))
             .arg(Arg::new("search").short('s').long("search"))
@@ -50,7 +53,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(m) => m,
             Err(e) => {
                 eprintln!("{}", e);
-                prompt_for_next()?;
                 continue;
             }
         };
@@ -60,9 +62,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             
         // Handle file command
         if let Some(file) = file_path {
+
             let res = extract::extract_text(file);
             let pages = res.get_pages();
-            let chunks = chunk::create_chunks(pages);
+            let chunks = chunk::chunk_everything(pages);
             let embedded_chunks = embed::get_embeddings(chunks)?;
             let client = qdrant::setup_qdrant(&embedded_chunks, file).await?;
             let response = qdrant::store_embeddings(&client, file, embedded_chunks).await?;
@@ -86,9 +89,25 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             if !query.is_empty() {
                match qdrant::run_query(&client, &collection, query).await {
                 Ok(resp) => {
-                    println!("{:?}", resp)
-                    
+                    let app = Router::new()
+                        .route("/", get(home_page))
+                        .route("/api/pages", get(get_pages));
 
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+                        .await
+                        .unwrap();
+                    
+                    println!("Server running on http://127.0.0.1:3000");
+                    axum::serve(listener, app).await.unwrap();
+            
+                    for point in resp.result {
+                            if let Some(text_value) = point.payload.get("text") {
+                                if let Some(text) = text_value.as_str() {
+                                    println!("-----");
+                                    println!("{}", text);
+                                }
+                            }
+                        }
                 }
                 Err(e) => return Err(e.into())
                }
@@ -97,18 +116,57 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
 }
 
-prompt_for_next()?;
     }
 }
 
-fn prompt_for_next() -> Result<(), Box<dyn std::error::Error>> {
-    print!("\nEnter command (or Ctrl+C to exit): ");
-    io::stdout().flush()?;
+async fn home_page() -> Html<String> {
+    Html(r#"
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+        <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body>
+        <div id="root"></div>
+        <script>
+            // Fetch pages and render component
+            fetch('/api/pages')
+                .then(r => r.json())
+                .then(data => console.log(data));
+        </script>
+    </body>
+    </html>
+    "#.to_string())
+}
 
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
+#[derive(Serialize)]
+struct PagesResponse {
+    pages: Vec<String>,
+}
 
+// Using bincode
+fn save_pages(pages: &Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let encoded = bincode::serialize(pages)?;
+    fs::write("pages.bin", encoded)?;
     Ok(())
 }
+
+fn load_pages() -> Result<Vec<Page>, Box<dyn std::error::Error>> {
+    let bytes = fs::read("pages.bin")?;
+    let pages = bincode::deserialize(&bytes)?;
+    Ok(pages)
+}
+
+// API endpoint to get your PDF pages
+async fn get_pages() -> Json<PagesResponse> {
+    // Replace this with your actual PDF extraction
+    let pages = 
+    
+    Json(PagesResponse { pages })
+}
+
+
 
 

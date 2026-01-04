@@ -1,5 +1,6 @@
-use rayon::prelude::*;
 
+use rayon::prelude::*;
+use text_splitter::TextSplitter;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -12,139 +13,71 @@ pub fn create_chunks(pages: &Vec<String>) -> Vec<Chunk> {
 
     // Process pages in parallel and collect all chunks
     pages
-        .into_par_iter()
+        .par_iter()  // Fixed: use par_iter() instead of into_par_iter()
         .enumerate()
         .flat_map(|(page_idx, page_content)| {
-            let cleaned = clean_text(&page_content);
-            chunk_page(cleaned, page_idx as u16, max_token_size)
+            chunk_page(page_content, page_idx as u16, max_token_size)
         })
         .collect()
 }
 
-fn chunk_page(content: String, page_num: u16, max_size: usize) -> Vec<Chunk> {
-    // Split on natural breaks (double newlines, indicating paragraphs/sections)
-    let sections: Vec<&str> = content
-        .split("\n\n")
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
+pub fn chunk_everything(pages: &Vec<String>) -> Vec<Chunk> {
+    let combined = pages.join("\n");
+    
+    // Split into sentences first (basic sentence detection)
+    let sentences: Vec<&str> = combined
+        .split(|c| c == '.' || c == '?' || c == '!')
+        .filter(|s| !s.trim().is_empty())
         .collect();
-
+    
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
-    let mut current_tokens = 0;
-
-    for section in sections {
-        let section_tokens = estimate_tokens(section);
-
-        // If section alone exceeds max_size, split it further
-        if section_tokens > max_size {
-            // Save current chunk if it has content
+    let target_size = 200; // characters per chunk (adjust as needed)
+    let min_size = 100;    // minimum before forcing a split
+    
+    for sentence in sentences {
+        let sentence = sentence.trim();
+        
+        // If adding this sentence would exceed target size AND we're above minimum
+        if current_chunk.len() + sentence.len() > target_size && current_chunk.len() >= min_size {
+            // Save current chunk
             if !current_chunk.is_empty() {
                 chunks.push(Chunk {
                     content: current_chunk.trim().to_string(),
-                    page: page_num,
+                    page: 0,
                 });
                 current_chunk.clear();
-                current_tokens = 0;
             }
-
-            // Split large section by sentences
-            let sub_chunks = split_large_section(section, max_size);
-            for sub in sub_chunks {
-                chunks.push(Chunk {
-                    content: sub,
-                    page: page_num,
-                });
-            }
-            continue;
         }
-
-        // If adding this section would exceed max_size, save current chunk
-        if current_tokens + section_tokens > max_size && !current_chunk.is_empty() {
-            chunks.push(Chunk {
-                content: current_chunk.trim().to_string(),
-                page: page_num,
-            });
-            current_chunk.clear();
-            current_tokens = 0;
-        }
-
-        // Add section to current chunk with natural break preserved
+        
+        // Add sentence to current chunk
         if !current_chunk.is_empty() {
-            current_chunk.push_str("\n\n");
+            current_chunk.push(' ');
         }
-        current_chunk.push_str(section);
-        current_tokens += section_tokens;
+        current_chunk.push_str(sentence);
+        current_chunk.push('.');
     }
-
-    // Save final chunk
+    
+    // Don't forget the last chunk
     if !current_chunk.is_empty() {
         chunks.push(Chunk {
             content: current_chunk.trim().to_string(),
-            page: page_num,
+            page: 0,
         });
     }
-
+    
     chunks
 }
 
-// Handle sections that are too large by splitting on sentence boundaries
-fn split_large_section(section: &str, max_size: usize) -> Vec<String> {
-    let sentences: Vec<&str> = section
-        .split(|c| c == '.' || c == '!' || c == '?')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect();
+fn chunk_page(content: &String, page_num: u16, max_size: usize) -> Vec<Chunk> {
 
-    let mut result = Vec::new();
-    let mut current = String::new();
-    let mut tokens = 0;
-
-    for (i, sentence) in sentences.iter().enumerate() {
-        let sentence_tokens = estimate_tokens(sentence);
-        let with_punct = format!("{}.", sentence); // Re-add punctuation
-
-        if tokens + sentence_tokens > max_size && !current.is_empty() {
-            result.push(current.trim().to_string());
-            current.clear();
-            tokens = 0;
-        }
-
-        if !current.is_empty() {
-            current.push(' ');
-        }
-        current.push_str(&with_punct);
-        tokens += sentence_tokens;
-    }
-
-    if !current.is_empty() {
-        result.push(current.trim().to_string());
-    }
-
-    result
+    let splitter = TextSplitter::new(512);
+    let chunks: Vec<Chunk> = splitter.chunks(content)
+    .map(|s| Chunk {
+        content: s.to_string(),
+        page:page_num,
+    })
+    .collect();
+    chunks
 }
 
-fn clean_text(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut last_was_space = true;
-
-    for c in text.chars() {
-        if c.is_whitespace() {
-            if !last_was_space {
-                result.push(' ');
-                last_was_space = true;
-            }
-        } else if c.is_ascii() {
-            result.push(c);
-            last_was_space = false;
-        }
-        // Skip non-ASCII characters entirely (or handle differently)
-    }
-
-    result.trim().to_string()
-}
-
-// Simple token estimation (roughly 1 token per 4 characters)
-fn estimate_tokens(text: &str) -> usize {
-    (text.len() as f32 / 4.0).ceil() as usize
-}

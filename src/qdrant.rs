@@ -11,6 +11,7 @@ use qdrant_client::qdrant::SearchResponse;
 use qdrant_client::qdrant::SearchPointsBuilder;
 use std::collections::HashMap;
 
+
 use crate::embed;
 
 pub async fn setup_qdrant(
@@ -18,6 +19,8 @@ pub async fn setup_qdrant(
     collection_name: &str,
 ) -> Result<Qdrant, QdrantError> {
     let client = Qdrant::from_url("http://localhost:6334").build()?;
+
+    delete_all_collections(&client).await;
 
     client
         .create_collection(
@@ -88,4 +91,18 @@ pub async fn run_query(client: &Qdrant, collection_name: &str, query: &str) -> R
     .await?;
 
     Ok(search_result)
+}
+
+pub async fn delete_all_collections(client: &Qdrant) -> Result<(), Box<dyn std::error::Error>> {
+    // Get list of all collections
+    let collections = client.list_collections().await?;
+    
+    // Delete each collection
+    for collection in collections.collections {
+        println!("Deleting collection: {}", collection.name);
+        client.delete_collection(&collection.name).await?;
+    }
+    
+    println!("All collections deleted!");
+    Ok(())
 }
