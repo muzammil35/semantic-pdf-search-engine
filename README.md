@@ -8,7 +8,7 @@ run `cargo build`
 
 run `cargo run`
 
--Now you should be able to interact with the CLI:
+Now you should be able to interact with the CLI:
   # Supported CLI Commands:
     - file ex.pdf (extract and embed file into qdrant vector database, file should be in the root folder of this repo)
     - search ex.pdf (query the vector database and get results back)
