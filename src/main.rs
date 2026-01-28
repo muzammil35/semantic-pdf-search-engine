@@ -131,7 +131,7 @@ async fn process_file(file_path: &str) -> Result<(), Box<dyn std::error::Error>>
     println!("Processing file: {}", file_path);
     let res = extract::extract_text(file_path);
     let pages = res.get_pages();
-    let chunks = chunk::chunk_pages_with_splitter(pages, 200);
+    let chunks = chunk::chunk_per_page(pages);
     let embedded_chunks = embed::get_embeddings(chunks)?;
     let client = qdrant::setup_qdrant(&embedded_chunks, file_path).await?;
     let response = qdrant::store_embeddings(&client, file_path, embedded_chunks).await?;
