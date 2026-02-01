@@ -6,7 +6,7 @@ use fastembed::{
 use once_cell::sync::OnceCell;
 use std::fs;
 use std::sync::{Arc, RwLock};
- 
+
 use crate::chunk::Chunk;
 
 pub struct Embeddings {
@@ -42,8 +42,6 @@ fn initialize_model() -> Result<TextEmbedding, Error> {
 }
 
 pub fn get_embeddings(original: Vec<Chunk>) -> Result<Embeddings, Error> {
-    
-
     // Initialize model on first call
     let model = MODEL_CELL.get_or_try_init(|| {
         let result = initialize_model();
@@ -65,7 +63,6 @@ pub fn get_embeddings(original: Vec<Chunk>) -> Result<Embeddings, Error> {
 }
 
 pub fn embed_query(query: &str) -> Result<Vec<f32>, Error> {
-    
     let model = MODEL_CELL.get_or_try_init(|| {
         let result = initialize_model();
         result.map(|m| Arc::new(RwLock::new(m)))

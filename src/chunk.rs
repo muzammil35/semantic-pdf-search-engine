@@ -1,8 +1,7 @@
-
+use crate::extract::Page;
 use rayon::prelude::*;
-use text_splitter::TextSplitter;
-use crate::extract::Page; 
 use regex::Regex;
+use text_splitter::TextSplitter;
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone)]
@@ -31,7 +30,7 @@ pub fn chunk_pages_with_splitter(pages: &[Page], max_chars: usize) -> Vec<Chunk>
     chunks
 }
 
-pub fn chunk_per_page(pages: &[Page]) ->Vec<Chunk> {
+pub fn chunk_per_page(pages: &[Page]) -> Vec<Chunk> {
     let mut return_chunks: Vec<Chunk> = Vec::new();
     for page in pages {
         let chunks = smart_chunk_text(&page.content, 2000, 200, true);
@@ -39,9 +38,10 @@ pub fn chunk_per_page(pages: &[Page]) ->Vec<Chunk> {
             if is_garbage_sentence(&chunk) {
                 continue;
             }
-            return_chunks.push(
-                Chunk { content: (chunk), page: (page.page_num) }
-            );
+            return_chunks.push(Chunk {
+                content: (chunk),
+                page: (page.page_num),
+            });
         }
     }
     return_chunks
@@ -50,56 +50,57 @@ pub fn chunk_per_page(pages: &[Page]) ->Vec<Chunk> {
 pub fn remove_section_headers(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut cleaned_lines = Vec::new();
-    
+
     // Regex patterns for common section headers
     let section_number_regex = Regex::new(
-        r"^[\s]*(\d+\.)+\d*[\s]*[A-Z]"  // Matches "3.1 Introduction" or "3.1.2 Details"
-    ).unwrap();
-    
-    let chapter_regex = Regex::new(
-        r"^[\s]*(Chapter|Section|Part|Appendix)[\s]+(\d+|[A-Z])"
-    ).unwrap();
-    
+        r"^[\s]*(\d+\.)+\d*[\s]*[A-Z]", // Matches "3.1 Introduction" or "3.1.2 Details"
+    )
+    .unwrap();
+
+    let chapter_regex =
+        Regex::new(r"^[\s]*(Chapter|Section|Part|Appendix)[\s]+(\d+|[A-Z])").unwrap();
+
     let simple_header_regex = Regex::new(
-        r"^[\s]*\d+\.[\s]*[A-Z][a-z]+"  // Matches "3. Introduction"
-    ).unwrap();
-    
+        r"^[\s]*\d+\.[\s]*[A-Z][a-z]+", // Matches "3. Introduction"
+    )
+    .unwrap();
+
     for line in lines {
         let trimmed = line.trim();
-        
+
         // Skip empty lines
         if trimmed.is_empty() {
             continue;
         }
-        
+
         // Check if line is a section header
         let is_header = section_number_regex.is_match(trimmed)
             || chapter_regex.is_match(trimmed)
             || simple_header_regex.is_match(trimmed)
             || is_likely_header(trimmed);
-        
+
         if !is_header {
             cleaned_lines.push(line);
         }
     }
-    
+
     cleaned_lines.join("\n")
 }
 
 // Additional heuristic check for headers
 fn is_likely_header(line: &str) -> bool {
     let trimmed = line.trim();
-    
+
     // Headers are usually short
     if trimmed.len() > 100 {
         return false;
     }
-    
+
     // Check for common patterns
     let starts_with_number = trimmed.chars().next().map_or(false, |c| c.is_numeric());
     let has_colon = trimmed.contains(':');
     let word_count = trimmed.split_whitespace().count();
-    
+
     // Common header patterns:
     // - Starts with number and has few words
     // - All caps (like "INTRODUCTION")
@@ -107,23 +108,25 @@ fn is_likely_header(line: &str) -> bool {
     if starts_with_number && word_count <= 6 {
         return true;
     }
-    
-    if trimmed.chars().all(|c| c.is_uppercase() || c.is_whitespace() || c.is_numeric()) && word_count <= 5 {
+
+    if trimmed
+        .chars()
+        .all(|c| c.is_uppercase() || c.is_whitespace() || c.is_numeric())
+        && word_count <= 5
+    {
         return true;
     }
-    
+
     // "3.1: Introduction to Machine Learning" pattern
     if starts_with_number && has_colon && word_count <= 8 {
         return true;
     }
-    
+
     false
 }
 
 fn split_into_sentences(text: &str) -> Vec<String> {
-       text.unicode_sentences()
-        .map(|s| s.to_string())
-        .collect()
+    text.unicode_sentences().map(|s| s.to_string()).collect()
 }
 
 /// Clean PDF text for chunking / embeddings.
@@ -200,42 +203,40 @@ pub fn clean_pdf_text_robust(text: &str, remove_headers: bool) -> String {
 
 pub fn clean_pdf_text_advanced(text: &str, remove_headers: bool) -> String {
     let mut cleaned = text.to_string();
-    
+
     // Remove headers first if requested
     if remove_headers {
         cleaned = remove_section_headers(&cleaned);
     }
 
-    let toc_leader_regex = Regex::new(
-        r"(?m)^[\s\d]*([.]\s*){5,}[\s\d]*$"
-    ).unwrap();
+    let toc_leader_regex = Regex::new(r"(?m)^[\s\d]*([.]\s*){5,}[\s\d]*$").unwrap();
 
     //remove table of contents leader lines
     cleaned = toc_leader_regex.replace_all(&cleaned, "").to_string();
-    
+
     //remove mostly non-letter lines
     cleaned = cleaned
-    .lines()
-    .filter(|line| {
-        let letters = line.chars().filter(|c| c.is_alphabetic()).count();
-        let total = line.chars().count();
+        .lines()
+        .filter(|line| {
+            let letters = line.chars().filter(|c| c.is_alphabetic()).count();
+            let total = line.chars().count();
 
-        // Keep line if it has enough real text
-        total == 0 || letters * 4 >= total
-    })
-    .collect::<Vec<_>>()
-    .join("\n");
-    
+            // Keep line if it has enough real text
+            total == 0 || letters * 4 >= total
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
     // Remove common PDF artifacts
     cleaned = cleaned
         .chars()
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
         .collect();
-    
+
     // Normalize whitespace
     let whitespace_regex = Regex::new(r"\s+").unwrap();
     cleaned = whitespace_regex.replace_all(&cleaned, " ").to_string();
-    
+
     // Remove common PDF ligatures and special chars
     cleaned = cleaned
         .replace("ﬁ", "fi")
@@ -246,11 +247,11 @@ pub fn clean_pdf_text_advanced(text: &str, remove_headers: bool) -> String {
         .replace("\u{FEFF}", "")
         .replace("\u{200B}", "")
         .replace("\u{00A0}", " ");
-    
+
     // Remove repeated punctuation artifacts
     let punct_regex = Regex::new(r"([.,!?;:]){3,}").unwrap();
     cleaned = punct_regex.replace_all(&cleaned, "$1").to_string();
-    
+
     cleaned.trim().to_string()
 }
 
@@ -263,27 +264,32 @@ fn is_garbage_sentence(s: &str) -> bool {
 }
 
 // Updated chunking function
-pub fn smart_chunk_text(text: &str, chunk_size: usize, overlap: usize, remove_headers: bool) -> Vec<String> {
+pub fn smart_chunk_text(
+    text: &str,
+    chunk_size: usize,
+    overlap: usize,
+    remove_headers: bool,
+) -> Vec<String> {
     let cleaned = clean_pdf_text_robust(text, remove_headers);
     let sentences = split_into_sentences(&cleaned);
-    
+
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
     let mut sentence_buffer = Vec::new();
-    
+
     for sentence in sentences {
         // Skip if sentence looks like a standalone header that slipped through
         if is_likely_header(&sentence) {
             continue;
         }
-        
+
         sentence_buffer.push(sentence.clone());
         current_chunk.push_str(&sentence);
         current_chunk.push(' ');
-        
+
         if current_chunk.len() >= chunk_size {
             chunks.push(current_chunk.trim().to_string());
-            
+
             current_chunk = sentence_buffer
                 .iter()
                 .rev()
@@ -292,18 +298,17 @@ pub fn smart_chunk_text(text: &str, chunk_size: usize, overlap: usize, remove_he
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(" ");
-            
+
             sentence_buffer.clear();
         }
     }
-    
+
     if !current_chunk.is_empty() {
         chunks.push(current_chunk.trim().to_string());
     }
-    
+
     chunks
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -333,7 +338,7 @@ mod tests {
 
         let chunks = chunk_per_page(&pages);
 
-        for chunk in &chunks{
+        for chunk in &chunks {
             print!("chunk start");
             println!("{:?}", chunk.content);
             println!("");
@@ -349,5 +354,3 @@ mod tests {
         }
     }
 }
-
-

@@ -2,15 +2,14 @@ use fastembed::Embedding;
 use qdrant_client::Qdrant;
 use qdrant_client::QdrantError;
 use qdrant_client::qdrant::Distance;
+use qdrant_client::qdrant::QueryPointsBuilder;
 use qdrant_client::qdrant::QueryResponse;
+use qdrant_client::qdrant::SearchPointsBuilder;
+use qdrant_client::qdrant::SearchResponse;
 use qdrant_client::qdrant::UpsertPointsBuilder;
 use qdrant_client::qdrant::{CreateCollectionBuilder, VectorParamsBuilder};
 use qdrant_client::qdrant::{PointStruct, Value};
-use qdrant_client::qdrant::QueryPointsBuilder;
-use qdrant_client::qdrant::SearchResponse;
-use qdrant_client::qdrant::SearchPointsBuilder;
 use std::collections::HashMap;
-
 
 use crate::embed;
 
@@ -75,22 +74,25 @@ pub async fn store_embeddings(
     Ok(())
 }
 
-pub async fn run_query(client: &Qdrant, collection_name: &str, query: &str) -> Result<SearchResponse, anyhow::Error> {
+pub async fn run_query(
+    client: &Qdrant,
+    collection_name: &str,
+    query: &str,
+) -> Result<SearchResponse, anyhow::Error> {
     let emb_query = match embed::embed_query(query) {
         Ok(embedding) => embedding,
         Err(e) => {
             eprintln!("Failed to embed query: {}", e);
             return Err(e);
-            
         }
     };
     let search_result = client
-    .search_points(
-        SearchPointsBuilder::new(collection_name, emb_query, 5)
-            .with_payload(true)  // This enables payload return
-            .build()
-    )
-    .await?;
+        .search_points(
+            SearchPointsBuilder::new(collection_name, emb_query, 5)
+                .with_payload(true) // This enables payload return
+                .build(),
+        )
+        .await?;
 
     Ok(search_result)
 }
@@ -98,13 +100,13 @@ pub async fn run_query(client: &Qdrant, collection_name: &str, query: &str) -> R
 pub async fn delete_all_collections(client: &Qdrant) -> Result<(), Box<dyn std::error::Error>> {
     // Get list of all collections
     let collections = client.list_collections().await?;
-    
+
     // Delete each collection
     for collection in collections.collections {
         println!("Deleting collection: {}", collection.name);
         client.delete_collection(&collection.name).await?;
     }
-    
+
     println!("All collections deleted!");
     Ok(())
 }
