@@ -1,12 +1,12 @@
 # Getting started
 
-run `docker pull qdrant/qdrant`
+`docker pull qdrant/qdrant`
 
-run `docker run -p 6333:6333 -p 6334:6334 \ -v "$(pwd)/qdrant_storage:/qdrant/storage:z" \ qdrant/qdrant`
+`docker run -p 6333:6333 -p 6334:6334 \ -v "$(pwd)/qdrant_storage:/qdrant/storage:z" \ qdrant/qdrant`
 
-run `cargo build`
+`cargo build`
 
-run `cargo run`
+`cargo run`
 
 Now you should be able to interact with the CLI:
   # Supported CLI Commands:
