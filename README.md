@@ -1,7 +1,7 @@
 # Prerequisites
 - Docker
-  Rust
-  Python
+- Rust
+- Python
   
 
 # Getting started
