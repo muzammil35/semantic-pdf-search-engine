@@ -1,4 +1,11 @@
+# Prerequisites
+- Docker
+  Rust
+  Python
+  
+
 # Getting started
+`pip install requirements.txt`
 
 `docker pull qdrant/qdrant`
 
