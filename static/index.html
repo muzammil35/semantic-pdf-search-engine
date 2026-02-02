@@ -154,7 +154,7 @@
         try {
 
             // Create find controller after document is loaded
-            const pdfFindController = new pdfjsViewer.PDFFindController({
+            pdfFindController = new pdfjsViewer.PDFFindController({
                 eventBus: eventBus,
                 linkService: pdfLinkService,
                 pdfViewer: pdfViewer,
