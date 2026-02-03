@@ -234,14 +234,72 @@
         }
     });
 
+    // eventBus.on('updatefindcontrolstate', (e) => {
+    //     console.log('Find control state:', e);
+    //     if (e.state === pdfjsViewer.FindState.FOUND) {
+    //         if (e.matchesCount) {
+    //             currentMatchIndex = e.matchesCount.current || 0;
+    //             totalMatches = e.matchesCount.total || 0;
+    //             updateMatchCounter(currentMatchIndex, totalMatches);
+    //         }
+    //     } else if (e.state === pdfjsViewer.FindState.NOT_FOUND) {
+    //         updateMatchCounter(0, 0);
+    //     }
+    // });
+
+    let lastScrolledMatch = null;
+
+    function scrollIntoViewIfNotVisible(highlighted) {
+        if (highlighted === lastScrolledMatch) return;
+
+        const container = document.getElementById('viewerContainer');
+        const elementRect = highlighted.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+
+        const isVisible =
+            elementRect.top >= containerRect.top &&
+            elementRect.bottom <= containerRect.bottom;
+
+        if (!isVisible) {
+            highlighted.scrollIntoView({ block: 'center' });
+            lastScrolledMatch = highlighted;
+        }
+    }
+
+
+
     eventBus.on('updatefindcontrolstate', (e) => {
-        console.log('Find control state:', e);
         if (e.state === pdfjsViewer.FindState.FOUND) {
             if (e.matchesCount) {
                 currentMatchIndex = e.matchesCount.current || 0;
                 totalMatches = e.matchesCount.total || 0;
                 updateMatchCounter(currentMatchIndex, totalMatches);
             }
+            
+            setTimeout(() => {
+                const highlighted = document.querySelector('.highlight.selected');
+                const elementRect = highlighted.getBoundingClientRect();
+
+                // Find your scrollable container (adjust the selector to match your HTML)
+                const scrollContainer = document.querySelector('#viewerContainer'); // or whatever your container class is
+
+                const containerTop = scrollContainer.scrollTop;
+                const containerBottom = containerTop + scrollContainer.clientHeight;
+
+                const elementTop = highlighted.offsetTop;
+                const elementBottom = elementTop + highlighted.offsetHeight;
+
+
+            
+                if (highlighted) {
+                    console.log("top of current element: ", elementTop);
+                    console.log("bottom of current element: ", elementRect.bottom + scrollContainer.scrollTop);
+                    console.log("top of container",containerTop );
+                    console.log("bottom of container",containerBottom );
+                    scrollIntoViewIfNotVisible(highlighted);
+   
+                }
+            }, 100);
         } else if (e.state === pdfjsViewer.FindState.NOT_FOUND) {
             updateMatchCounter(0, 0);
         }
