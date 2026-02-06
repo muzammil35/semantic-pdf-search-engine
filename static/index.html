@@ -150,6 +150,7 @@
         let pagesReady = 0;
         let backendMatches = []; // top 5 matches from backend
         let currentSearchQuery = ''; // Store the original query
+        let pdfDocument = null;
 
 
         // Load PDF
@@ -167,7 +168,7 @@
                 pdfViewer.findController = pdfFindController;
 
                 const loadingTask = pdfjsLib.getDocument('/api/pdf');
-                const pdfDocument = await loadingTask.promise;
+                pdfDocument = await loadingTask.promise;
                 
                 pdfViewer.setDocument(pdfDocument);
                 pdfLinkService.setDocument(pdfDocument);
@@ -250,46 +251,109 @@
             }
         }
 
-        function highlightCurrentBackendMatch() {
+        function fixHyphenatedWords(text) {
+            // Pattern: hyphen followed by optional whitespace, newline, then a letter
+            // This catches cases like "pro- grammers" or "pro-\ngrammers"
+            const pattern = /(\w+)-\s+(\w+)/g;
+            
+            return text.replace(pattern, '$1-$2');
+        }
+
+        async function findAndExtractExcerpt(textContent, firstThreeWords, remaining_search_len) {
+            // Get all text content from the page
+            const items = textContent.items;
+            
+            // Build the full text of the page
+            const fullText = items.map(item => item.str).join(' ');
+            
+            // Normalize whitespace in search terms
+            const startPhrase = firstThreeWords.trim().replace(/\s+/g, ' ');
+            const endPhrase = lastThreeWords.trim().replace(/\s+/g, ' ');
+            
+            // Find the start and end positions in the full text
+            const startIndex = fullText.indexOf(startPhrase);
+            const endIndex = fullText.indexOf(endPhrase);
+            
+            if (startIndex === -1 || endIndex === -1) {
+                console.error('Could not find excerpt boundaries');
+                return null;
+            }
+                    
+            // Extract the excerpt
+            const excerpt = fullText.substring(startIndex, rem);
+            
+            // Get all items in the excerpt range
+            const excerptItems = items.slice(excerptStartItem, excerptEndItem + 1);
+            console.log(excerptItems);
+            console.log(excerpt);
+
+            return {
+                found: excerptStartItem !== -1 && excerptEndItem !== -1,
+                excerpt: excerpt,
+                startIndex,
+                endIndex
+            };
+
+        }
+
+
+        async function highlightCurrentBackendMatch() {
             if (!pdfFindController || backendMatches.length === 0) return;
 
             const match = backendMatches[currentMatchIndex];
             
-            // Extract first 5-10 words from the snippet for better matching
-            // Remove special chars and get clean words
-            const words = match.text
-                .replace(/[^\w\s]/g, ' ')  // Remove special characters
-                .trim()
-                .split(/\s+/)              // Split on whitespace
-                .filter(w => w.length > 0); // Remove empty strings
-            
-            // Take first 5-10 words depending on length
-            const numWords = words.length > 10 ? 8 : Math.min(5, words.length);
-            const searchPhrase = words.slice(0, numWords).join(' ');
-            
             console.log('Navigating to page:', match.page);
-            console.log('Original snippet:', match.text.substring(0, 100) + '...');
-            console.log('Search phrase:', searchPhrase);
+            console.log('Chunk text:', match.text.substring(0, 100) + '...');
 
             // Scroll PDF to the page
             pdfViewer.scrollPageIntoView({ pageNumber: match.page });
 
-            // Use the extracted phrase for highlighting
-            // Give the page time to render before searching
-            setTimeout(() => {
-                eventBus.dispatch('find', {
-                    type: 'find',
-                    query: searchPhrase,
-                    caseSensitive: false,
-                    entireWord: false,
-                    highlightAll: true,
-                    findPrevious: false,
-                });
+            // Wait for page to render, then get its text
+            setTimeout(async () => {
+                try {
+                    const page = await pdfDocument.getPage(match.page);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+
+                    const words = match.text.trim().split(/\s+/);
+                    const first3 = words.slice(0, 3).join(' ');
+
+                    const remaining_search_len = match.text.length - first3.length
+                    
+                    const searchResult = await findAndExtractExcerpt(textContent, first3, remaining_search_len)
+                    
+                    if (searchResult.found) {
+                        console.log('Found chunk boundaries - searching for first words:', searchResult.firstWords);
+                        
+                        // Search for the first few words to navigate to the chunk
+                        eventBus.dispatch('find', {
+                            type: 'find',
+                            query: searchResult.excerpt,
+                            caseSensitive: false,
+                            entireWord: false,
+                            highlightAll: false,
+                            findPrevious: false,
+                        });
+                    } else {
+                        console.warn('Could not locate chunk on page - falling back to full text search');
+                        // Fallback to your original method
+                        const searchPhrase = fixHyphenatedWords(match.text);
+                        eventBus.dispatch('find', {
+                            type: 'find',
+                            query: searchPhrase,
+                            caseSensitive: false,
+                            entireWord: false,
+                            highlightAll: true,
+                            findPrevious: false,
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error getting page text:', error);
+                }
             }, 100);
 
             updateMatchCounter(currentMatchIndex + 1, backendMatches.length);
         }
-
 
         // Listen for search results
         eventBus.on('updatefindmatchescount', (e) => {

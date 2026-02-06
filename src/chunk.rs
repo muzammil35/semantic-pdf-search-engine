@@ -28,12 +28,22 @@ pub struct Chunk {
         if let Ok(text) = doc.extract_text(&[page_num]) {
             let chunk_texts: Vec<_> = splitter.chunks(&text).collect();
 
+            let mut filtered_count = 0;
+
             for chunk in chunk_texts {
-                chunks.push(Chunk {
-                    content: chunk.to_string(),
-                    page: (page_num) as u16,
-                });
+                if is_valid_chunk(&chunk) {
+                    chunks.push(Chunk {
+                        content: chunk.to_string(),
+                        page: (page_num) as u16,
+                    });    
+                }
+                else {
+                    filtered_count += 1;
+                    println!("FILTERED: {:?}", &chunk);
+                }
+                
             }
+            println!("Filtered out {} chunks", filtered_count);
         }
     }
 
@@ -43,6 +53,99 @@ pub struct Chunk {
     }
     
     Ok(chunks)
+}
+
+fn is_valid_chunk(text: &str) -> bool {
+    let trimmed = text.trim();
+    
+    // 1. Minimum length check (at least 50 characters for meaningful content)
+    if trimmed.len() < 50 {
+        return false;
+    }
+    
+    // 2. Must contain at least one complete sentence
+    if !has_complete_sentence(trimmed) {
+        return false;
+    }
+    
+    // 3. Filter out code-like patterns
+    if looks_like_code(trimmed) {
+        return false;
+    }
+    
+    // 4. Check word count (at least 8 words)
+    let word_count = trimmed.split_whitespace().count();
+    if word_count < 8 {
+        return false;
+    }
+    
+    // 5. Check for reasonable ratio of alphabetic characters
+    let alpha_count = trimmed.chars().filter(|c| c.is_alphabetic()).count();
+    let alpha_ratio = alpha_count as f32 / trimmed.len() as f32;
+    if alpha_ratio < 0.5 {
+        return false;
+    }
+
+    // 6. Ensure multiple sentences
+    let sentence_endings = text.matches(&['.', '?', '!'][..]).count();
+    if sentence_endings < 2 {
+        return false;
+    }
+
+    // 7. Check for common single-word artifacts
+    let single_word_artifacts = ["foreword", "appendix", "index", "references"];
+    if single_word_artifacts.iter().any(|&word| trimmed.to_lowercase() == word) {
+        return false;
+    }
+
+    // 8. Reject if it's mostly ellipsis or truncation
+    if trimmed.contains("...") || trimmed.contains("[...]") {
+        let ellipsis_count = trimmed.matches("...").count() + trimmed.matches("[...]").count();
+        if ellipsis_count > 2 {
+            return false;
+        }
+}
+    
+    true
+}
+
+fn has_complete_sentence(text: &str) -> bool {
+    // Check for sentence-ending punctuation followed by space or end of string
+    let has_period = text.contains(". ") || text.ends_with('.');
+    let has_question = text.contains("? ") || text.ends_with('?');
+    let has_exclamation = text.contains("! ") || text.ends_with('!');
+    
+    // Must have at least one sentence ender and start with capital letter
+    (has_period || has_question || has_exclamation) && 
+    text.chars().next().map_or(false, |c| c.is_uppercase())
+}
+
+fn looks_like_code(text: &str) -> bool {
+    // Common code patterns
+    let code_indicators = [
+        "//", "/*", "*/", "*/\n", 
+        "{}", "[]", "();",
+        "function ", "const ", "let ", "var ",
+        "def ", "class ", "import ",
+        "```", "fn ", "pub fn",
+    ];
+    
+    // Check for multiple code indicators
+    let indicator_count = code_indicators.iter()
+        .filter(|&pattern| text.contains(pattern))
+        .count();
+    
+    // If 2+ code indicators, likely code
+    if indicator_count >= 2 {
+        return true;
+    }
+    
+    // Check if mostly punctuation/symbols
+    let symbol_count = text.chars()
+        .filter(|c| matches!(c, '{' | '}' | '[' | ']' | '(' | ')' | ';' | '/' | '*'))
+        .count();
+    
+    symbol_count > text.len() / 4
 }
 
 pub fn chunk_pages_with_splitter(pages: &[Page], max_chars: usize) -> Vec<Chunk> {
