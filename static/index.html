@@ -206,10 +206,9 @@
                 const query = e.target.value.trim();
                 
                 if (!query) {
-                    // Clear search
-                    if (pdfFindController) {
-                        eventBus.dispatch('findbarclose');
-                    }
+                    // Clear search - remove manual highlights
+                    document.querySelectorAll('.backend-highlight, .post-match-highlight')
+                        .forEach(el => el.classList.remove('backend-highlight', 'post-match-highlight'));
                     updateMatchCounter(0, 0);
                     backendMatches = [];
                     currentSearchQuery = '';
@@ -249,6 +248,9 @@
 
                 if (backendMatches.length === 0) {
                     updateMatchCounter(0, 0);
+                    // Clear any existing highlights
+                    document.querySelectorAll('.backend-highlight, .post-match-highlight')
+                        .forEach(el => el.classList.remove('backend-highlight', 'post-match-highlight'));
                     return;
                 }
 
@@ -262,7 +264,7 @@
         }
 
         async function highlightCurrentBackendMatch() {
-            if (!pdfFindController || backendMatches.length === 0) return;
+            if (backendMatches.length === 0) return;
 
             const match = backendMatches[currentMatchIndex];
 
@@ -272,80 +274,92 @@
             // Scroll to page
             pdfViewer.scrollPageIntoView({ pageNumber: match.page });
 
-            // Extract first 3 words ONLY
+            // Extract first 3 words
             const words = match.text.trim().split(/\s+/);
             const first3 = words.slice(0, 3).join(' ');
 
-            console.log('Searching for first words:', first3);
+            console.log('Looking for first 3 words:', first3);
 
-            // Give PDF.js a moment to render the page
+            // Wait for page to render, then highlight manually
             setTimeout(() => {
-                eventBus.dispatch('find', {
-                    type: 'find',
-                    query: first3,
-                    caseSensitive: false,
-                    entireWord: false,
-                    highlightAll: false, // important
-                    findPrevious: false,
-                });
-            }, 150);
+                highlightMatchManually(match.page, first3);
+            }, 200);
 
             updateMatchCounter(currentMatchIndex + 1, backendMatches.length);
         }
 
-        function highlightFromMatchToEndOfPage() {
-            const selected = document.querySelector('.highlight.selected');
-            if (!selected) return;
-
-            const pageDiv = selected.closest('.page');
-            if (!pageDiv) return;
+        function highlightMatchManually(pageNumber, searchText) {
+            // Find the page element
+            const pageDiv = document.querySelector(`[data-page-number="${pageNumber}"]`);
+            if (!pageDiv) {
+                console.log('Page not found:', pageNumber);
+                return;
+            }
 
             const textLayer = pageDiv.querySelector('.textLayer');
-            if (!textLayer) return;
-
-            // Get ALL spans in the text layer
-            const spans = Array.from(textLayer.querySelectorAll('span'));
-            
-            // Find which span contains or comes after the selected highlight
-            let startIndex = -1;
-            for (let i = 0; i < spans.length; i++) {
-                const span = spans[i];
-                // Check if this span contains the highlight or comes after it
-                if (span.contains(selected) || span.querySelector('.highlight.selected')) {
-                    startIndex = i;
-                    break;
-                }
+            if (!textLayer) {
+                console.log('Text layer not found');
+                return;
             }
-
-            if (startIndex === -1) return;
 
             // Remove old highlights
-            textLayer.querySelectorAll('.post-match-highlight')
-                .forEach(el => el.classList.remove('post-match-highlight'));
+            textLayer.querySelectorAll('.backend-highlight, .post-match-highlight')
+                .forEach(el => el.classList.remove('backend-highlight', 'post-match-highlight'));
 
-            // Add highlight class up to max 500 characters
-            let charCount = 0;
-            const maxChars = 500;
+            // Get all text spans
+            const spans = Array.from(textLayer.querySelectorAll('span'));
             
-            for (let i = startIndex; i < spans.length; i++) {
-                const spanText = spans[i].textContent;
-                const remainingChars = maxChars - charCount;
-                
-                if (charCount >= maxChars) {
-                    break;
+            // Build continuous text to search in
+            let fullText = '';
+            const spanMap = []; // Maps character positions to span indices
+            
+            for (let i = 0; i < spans.length; i++) {
+                const text = spans[i].textContent;
+                for (let j = 0; j < text.length; j++) {
+                    spanMap.push(i);
                 }
-                
-                if (charCount + spanText.length <= maxChars) {
-                    // Highlight entire span
-                    spans[i].classList.add('post-match-highlight');
-                    charCount += spanText.length;
-                } else {
-                    // Partial highlight - only highlight remaining chars
-                    spans[i].classList.add('post-match-highlight');
-                    charCount = maxChars;
-                    break;
-                }
+                fullText += text;
             }
+
+            // Find the search text in the full text
+            const searchLower = searchText.toLowerCase();
+            const fullLower = fullText.toLowerCase();
+            const matchIndex = fullLower.indexOf(searchLower);
+
+            if (matchIndex === -1) {
+                console.log('Search text not found in page text');
+                return;
+            }
+
+            console.log('Found match at character index:', matchIndex);
+
+            // Highlight from match start to match start + 500 chars
+            const highlightStart = matchIndex;
+            const highlightEnd = Math.min(matchIndex + 500, fullText.length);
+
+            // Mark which spans need highlighting
+            const spansToHighlight = new Set();
+            for (let i = highlightStart; i < highlightEnd; i++) {
+                spansToHighlight.add(spanMap[i]);
+            }
+
+            // Apply highlighting
+            spansToHighlight.forEach(spanIndex => {
+                spans[spanIndex].classList.add('backend-highlight');
+            });
+
+            // Scroll the first highlighted span into view
+            const firstHighlightedSpan = spans[Array.from(spansToHighlight)[0]];
+            if (firstHighlightedSpan) {
+                setTimeout(() => {
+                    scrollIntoViewIfNotVisible(firstHighlightedSpan);
+                }, 100);
+            }
+        }
+
+        function highlightFromMatchToEndOfPage() {
+            // This function is no longer needed with manual highlighting
+            // Keeping it for compatibility but it won't be called
         }
 
         function highlightFromMatchToEndOfPage_() {
@@ -475,18 +489,7 @@
 
         eventBus.on('updatefindcontrolstate', (e) => {
             console.log('Find control state:', e);
-            
-            if (e.state === pdfjsViewer.FindState.FOUND) {
-                setTimeout(() => {
-                    const highlighted = document.querySelector('.highlight.selected');
-                    if (highlighted) {
-                        scrollIntoViewIfNotVisible(highlighted);
-                    }
-                    highlightFromMatchToEndOfPage();
-                }, 100);
-            } else if (e.state === pdfjsViewer.FindState.NOT_FOUND) {
-                console.warn('Text not found on page');
-            }
+            // Manual highlighting now, so we don't need to react to PDF.js find events
         });
 
         function updateMatchCounter(current, total) {
@@ -527,7 +530,9 @@
                 }
             } else if (e.key === 'Escape') {
                 searchInput.value = '';
-                eventBus.dispatch('findbarclose');
+                // Clear manual highlights
+                document.querySelectorAll('.backend-highlight, .post-match-highlight')
+                    .forEach(el => el.classList.remove('backend-highlight', 'post-match-highlight'));
                 updateMatchCounter(0, 0);
                 backendMatches = [];
                 currentSearchQuery = '';
@@ -538,17 +543,10 @@
         zoomSelect.addEventListener('change', (e) => {
             pdfViewer.currentScaleValue = e.target.value;
             
-            // Re-run search if active
-            if (pdfFindController && currentSearchQuery) {
+            // Re-highlight current match if there is one
+            if (backendMatches.length > 0) {
                 setTimeout(() => {
-                    eventBus.dispatch('find', {
-                        type: 'find',
-                        query: currentSearchQuery,
-                        caseSensitive: false,
-                        entireWord: false,
-                        highlightAll: true,
-                        findPrevious: false,
-                    });
+                    highlightCurrentBackendMatch();
                 }, 100);
             }
         });
