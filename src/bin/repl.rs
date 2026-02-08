@@ -10,10 +10,10 @@ use serde::Serialize;
 
 use crate::chunk::chunk_pages_with_splitter;
 
-pub mod chunk;
-pub mod embed;
-pub mod extract;
-pub mod qdrant;
+use vb::chunk;
+use vb::embed;
+use vb::extract;
+use vb::qdrant;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -296,7 +296,7 @@ async fn serve_pdf(file_path: String) -> Result<(StatusCode, Body), StatusCode> 
 }
 
 async fn render_pdf() -> Result<Html<String>, StatusCode> {
-    match fs::read_to_string("static/index.html") {
+    match fs::read_to_string("static/render.html") {
         Ok(contents) => Ok(Html(contents)),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
