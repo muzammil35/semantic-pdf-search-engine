@@ -7,9 +7,7 @@ use std::io::{self, BufRead, Write};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use axum::{Json, Router, body::Body, http::StatusCode, response::Html, routing::get};
 use serde::Serialize;
-
-use crate::chunk::chunk_pages_with_splitter;
-
+use tower_http::services::ServeDir;
 use vb::chunk;
 use vb::embed;
 use vb::extract;
@@ -145,7 +143,7 @@ async fn process_file(file_path: &str) -> Result<(), Box<dyn std::error::Error>>
 
     //let pages = file.get_pages();
     //let chunks = chunk::chunk_per_page(pages);
-    let chunks = chunk::extract_and_chunk(file_path)?;
+    let chunks = chunk::extract_and_chunk(chunk::PdfSource::Path(file_path.to_string()))?;
     let embedded_chunks = embed::get_embeddings(chunks)?;
     let client = qdrant::setup_qdrant(&embedded_chunks, file_path).await?;
     let response = qdrant::store_embeddings(&client, file_path, embedded_chunks).await?;
@@ -262,6 +260,7 @@ async fn start_server(file_path: &str, collection_name: &str) -> Result<(), Box<
     // Build the router with state for collection_name
     let app = Router::new()
         .route("/", get(render_pdf))
+        .nest_service("/static", ServeDir::new("static"))
         .route(
             "/api/pdf",
             get({
@@ -296,7 +295,7 @@ async fn serve_pdf(file_path: String) -> Result<(StatusCode, Body), StatusCode> 
 }
 
 async fn render_pdf() -> Result<Html<String>, StatusCode> {
-    match fs::read_to_string("static/render.html") {
+    match fs::read_to_string("static/repl/render.html") {
         Ok(contents) => Ok(Html(contents)),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }

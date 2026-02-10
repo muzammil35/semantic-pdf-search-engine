@@ -121,7 +121,15 @@
         <div id="viewer" class="pdfViewer"></div>
     </div>
 
-    <script>
+    <script type="module">
+        import {
+            performSearch,
+            highlightCurrentBackendMatch,
+            highlightMatchManually,
+            scrollIntoViewIfNotVisible,
+            state,
+        } from "/static/utils.js";
+
         pdfjsLib.GlobalWorkerOptions.workerSrc = 
             'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -155,18 +163,12 @@
         const zoomSelect = document.getElementById('zoom-select');
         const loading = document.getElementById('loading');
 
-        let currentMatchIndex = 0;
-        let totalMatches = 0;
-        let pdfFindController = null;
-        let pagesReady = 0;
-        let backendMatches = []; // top 5 matches from backend
-        let currentSearchQuery = ''; // Store the original query
         let pdfDocument = null;
-        const pageTextIndex = new Map(); // pageNumber -> { fullText, items, offsetMap }
-        // Load PDF
+        let pdfFindController = null;
+        let totalMatches = 0;
+      
         async function loadPDF() {
             try {
-
                 // Create find controller after document is loaded
                 pdfFindController = new pdfjsViewer.PDFFindController({
                     eventBus: eventBus,
@@ -210,214 +212,47 @@
                     document.querySelectorAll('.backend-highlight, .post-match-highlight')
                         .forEach(el => el.classList.remove('backend-highlight', 'post-match-highlight'));
                     updateMatchCounter(0, 0);
-                    backendMatches = [];
-                    currentSearchQuery = '';
+                    state.backendMatches = [];
+                    state.currentSearchQuery = '';
                     return;
                 }
 
                 // Wait a bit more for text layers to be ready
-                if (pagesReady < 1) {
+                if (state.pagesReady < 1) {
                     console.log('Waiting for pages to render...');
                     setTimeout(() => {
-                        performSearch(query);
+                        performSearch(query, pdfViewer, updateMatchCounter);
                     }, 500);
                 } else {
-                    performSearch(query);
+                    performSearch(query, pdfViewer, updateMatchCounter);
                 }
             }, 300); // Debounce search
         });
-        
-        async function performSearch(query) {
-            console.log('Searching for:', query, 'Pages ready:', pagesReady);
-            
-            // Store the original query for highlighting
-            currentSearchQuery = query;
-
-            console.log('Calling backend search for:', query);
-
-            try {
-                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-                if (!response.ok) throw new Error('Network response was not ok');
-
-                const results = await response.json(); // expected: [{page, text}]
-                console.log('Backend matches:', results);
-
-                // Take top 5 matches
-                backendMatches = results.slice(0, 5);
-                currentMatchIndex = 0;
-
-                if (backendMatches.length === 0) {
-                    updateMatchCounter(0, 0);
-                    // Clear any existing highlights
-                    document.querySelectorAll('.backend-highlight, .post-match-highlight')
-                        .forEach(el => el.classList.remove('backend-highlight', 'post-match-highlight'));
-                    return;
-                }
-
-                // Start highlighting the first backend match
-                highlightCurrentBackendMatch();
-
-            } catch (error) {
-                console.error('Error fetching backend search results:', error);
-                updateMatchCounter(0, 0);
-            }
-        }
-
-        async function highlightCurrentBackendMatch() {
-            if (backendMatches.length === 0) return;
-
-            const match = backendMatches[currentMatchIndex];
-
-            console.log('Navigating to page:', match.page);
-            console.log('Chunk text:', match.text.substring(0, 100) + '...');
-
-            // Scroll to page
-            pdfViewer.scrollPageIntoView({ pageNumber: match.page });
-
-            // Extract first 3 words
-            const words = match.text.trim().split(/\s+/);
-            const first3 = words.slice(0, 3).join(' ');
-
-            console.log('Looking for first 3 words:', first3);
-
-            // Wait for page to render, then highlight manually
-            setTimeout(() => {
-                highlightMatchManually(match.page, first3);
-            }, 200);
-
-            updateMatchCounter(currentMatchIndex + 1, backendMatches.length);
-        }
-
-        function highlightMatchManually(pageNumber, searchText) {
-            // Find the page element
-            const pageDiv = document.querySelector(`[data-page-number="${pageNumber}"]`);
-            if (!pageDiv) {
-                console.log('Page not found:', pageNumber);
-                return;
-            }
-
-            const textLayer = pageDiv.querySelector('.textLayer');
-            if (!textLayer) {
-                console.log('Text layer not found');
-                return;
-            }
-
-            // Remove old highlights
-            textLayer.querySelectorAll('.backend-highlight, .post-match-highlight')
-                .forEach(el => el.classList.remove('backend-highlight', 'post-match-highlight'));
-
-            // Get all text spans
-            const spans = Array.from(textLayer.querySelectorAll('span'));
-            
-            // Build continuous text to search in
-            let fullText = '';
-            const spanMap = []; // Maps character positions to span indices
-            
-            for (let i = 0; i < spans.length; i++) {
-                const text = spans[i].textContent;
-                for (let j = 0; j < text.length; j++) {
-                    spanMap.push(i);
-                }
-                fullText += text;
-            }
-
-            // Find the search text in the full text
-            const searchLower = searchText.toLowerCase();
-            const fullLower = fullText.toLowerCase();
-            const matchIndex = fullLower.indexOf(searchLower);
-
-            if (matchIndex === -1) {
-                console.log('Search text not found in page text');
-                return;
-            }
-
-            console.log('Found match at character index:', matchIndex);
-
-            // Highlight from match start to match start + 500 chars
-            const highlightStart = matchIndex;
-            const highlightEnd = Math.min(matchIndex + 500, fullText.length);
-
-            // Mark which spans need highlighting
-            const spansToHighlight = new Set();
-            for (let i = highlightStart; i < highlightEnd; i++) {
-                spansToHighlight.add(spanMap[i]);
-            }
-
-            // Apply highlighting
-            spansToHighlight.forEach(spanIndex => {
-                spans[spanIndex].classList.add('backend-highlight');
-            });
-
-            // Scroll the first highlighted span into view
-            const firstHighlightedSpan = spans[Array.from(spansToHighlight)[0]];
-            if (firstHighlightedSpan) {
-                setTimeout(() => {
-                    scrollIntoViewIfNotVisible(firstHighlightedSpan);
-                }, 100);
-            }
-        }
-
-        function highlightFromMatchToEndOfPage() {
-            // This function is no longer needed with manual highlighting
-            // Keeping it for compatibility but it won't be called
-        }
         
         // Listen for search results
         eventBus.on('updatefindmatchescount', (e) => {
             console.log('Match count update:', e);
         });
 
-        let lastScrolledMatch = null;
-
-        function scrollIntoViewIfNotVisible(highlighted) {
-            if (!highlighted || highlighted === lastScrolledMatch) return;
-
-            const container = document.getElementById('viewerContainer');
-            const elementRect = highlighted.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-
-            const isVisible =
-                elementRect.top >= containerRect.top &&
-                elementRect.bottom <= containerRect.bottom;
-
-            if (!isVisible) {
-                highlighted.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                lastScrolledMatch = highlighted;
-            }
-        }
-
         eventBus.on('updatefindcontrolstate', (e) => {
             console.log('Find control state:', e);
             // Manual highlighting now, so we don't need to react to PDF.js find events
         });
 
-        function updateMatchCounter(current, total) {
-            if (total === 0) {
-                matchCounter.textContent = searchInput.value.trim() ? 'No matches' : '';
-                prevButton.disabled = true;
-                nextButton.disabled = true;
-            } else {
-                matchCounter.textContent = `${current} / ${total}`;
-                prevButton.disabled = current <= 1;
-                nextButton.disabled = current >= total;
-            }
-        }
-
         prevButton.addEventListener('click', () => {
-            if (backendMatches.length === 0) return;
+            if (state.backendMatches.length === 0) return;
 
-            currentMatchIndex = Math.max(0, currentMatchIndex - 1);
-            highlightCurrentBackendMatch();
+            state.currentMatchIndex = Math.max(0, state.currentMatchIndex - 1);
+            highlightCurrentBackendMatch(pdfViewer, updateMatchCounter);
         });
 
         nextButton.addEventListener('click', () => {
-            if (backendMatches.length === 0) return;
+            if (state.backendMatches.length === 0) return;
 
-            currentMatchIndex = Math.min(backendMatches.length - 1, currentMatchIndex + 1);
-            highlightCurrentBackendMatch();
+            state.currentMatchIndex = Math.min(state.backendMatches.length - 1, state.currentMatchIndex + 1);
+            highlightCurrentBackendMatch(pdfViewer, updateMatchCounter);
         });
-
-
+        
         // Keyboard shortcuts
         searchInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -433,8 +268,8 @@
                 document.querySelectorAll('.backend-highlight, .post-match-highlight')
                     .forEach(el => el.classList.remove('backend-highlight', 'post-match-highlight'));
                 updateMatchCounter(0, 0);
-                backendMatches = [];
-                currentSearchQuery = '';
+                state.backendMatches = [];
+                state.currentSearchQuery = '';
             }
         });
 
@@ -443,7 +278,7 @@
             pdfViewer.currentScaleValue = e.target.value;
             
             // Re-highlight current match if there is one
-            if (backendMatches.length > 0) {
+            if (state.backendMatches.length > 0) {
                 setTimeout(() => {
                     highlightCurrentBackendMatch();
                 }, 100);
@@ -452,13 +287,24 @@
 
         // Handle pages being rendered
         eventBus.on('pagerendered', (e) => {
-            pagesReady++;
+            state.pagesReady++;
         });
         
         // Handle text layer rendered
         eventBus.on('textlayerrendered', (e) => {
         });
 
+        function updateMatchCounter(current, total) {
+            if (total === 0) {
+                matchCounter.textContent = searchInput.value.trim() ? 'No matches' : '';
+                prevButton.disabled = true;
+                nextButton.disabled = true;
+            } else {
+                matchCounter.textContent = `${current} / ${total}`;
+                prevButton.disabled = current <= 1;
+                nextButton.disabled = current >= total;
+            }
+        }
         // Load the PDF on page load
         loadPDF();
     </script>

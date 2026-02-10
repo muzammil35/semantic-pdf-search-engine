@@ -32,6 +32,6 @@ image = "0.25"
 tiktoken-rs = "0.9.1"
 regex = "1.12.2"
 oxidize-pdf = "1.6.11"
-
+tower-http = { version = "0.5", features = ["fs"] }
 
 

@@ -10,14 +10,23 @@ pub struct Chunk {
     pub content: String,
     pub page: u16,
 }
+use std::path::PathBuf;
 
- pub fn extract_and_chunk(pdf_path: &str) -> Result<Vec<Chunk>, Box<dyn std::error::Error>> {
-    // Load the PDF
-    let doc = Document::load(pdf_path)?;
-    
+pub enum PdfSource {
+    Path(String),
+    Bytes(Vec<u8>),
+}
+
+ pub fn extract_and_chunk(pdf_source: PdfSource) -> Result<Vec<Chunk>, Box<dyn std::error::Error>> {
+
+    let doc = match pdf_source {
+        PdfSource::Path(path) => Document::load(path)?,
+        PdfSource::Bytes(vec) => Document::load_mem(&vec)?,
+    };
     // Extract text from all pages
     let mut full_text = String::new();
     let pages = doc.get_pages();
+
 
     let mut chunks: Vec<Chunk> = Vec::new();
 
