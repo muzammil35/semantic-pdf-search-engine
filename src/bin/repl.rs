@@ -138,15 +138,10 @@ fn print_help() {
 
 async fn process_file(file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("Processing file: {}", file_path);
-
-    //let file = extract::extract_pdf_file(file_path);
-
-    //let pages = file.get_pages();
-    //let chunks = chunk::chunk_per_page(pages);
     let chunks = chunk::extract_and_chunk(chunk::PdfSource::Path(file_path.to_string()))?;
     let embedded_chunks = embed::get_embeddings(chunks)?;
-    let client = qdrant::setup_qdrant( file_path).await?;
-    let response = qdrant::store_embeddings(&client, file_path, embedded_chunks).await?;
+    let client = qdrant::setup_qdrant().await?;
+    let response = qdrant::store_embeddings(&client, "repl", file_path, embedded_chunks).await?;
 
     println!("File processed successfully!");
     dbg!(response);
@@ -156,7 +151,7 @@ async fn process_file(file_path: &str) -> Result<(), Box<dyn std::error::Error>>
 
 // REPL version of search (prints to console)
 async fn run_search_repl(
-    collection_name: &str,
+    file_name: &str,
     query: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let query = query.trim();
@@ -166,7 +161,7 @@ async fn run_search_repl(
     }
 
     let client = Qdrant::from_url("http://localhost:6334").build()?;
-    let resp = qdrant::run_query(&client, collection_name, query).await?;
+    let resp = qdrant::run_query(&client, "repl", file_name, query).await?;
 
     println!("\nSearch Results:");
     println!("===============");
@@ -186,7 +181,7 @@ async fn run_search_repl(
 
 // API version of search (returns JSON)
 async fn run_search_api(
-    collection_name: &str,
+     file_name: &str,
     query: String,
 ) -> Result<Vec<SearchResult>, Box<dyn std::error::Error>> {
     let query = query.trim();
@@ -195,7 +190,7 @@ async fn run_search_api(
     }
 
     let client = Qdrant::from_url("http://localhost:6334").build()?;
-    let resp = qdrant::run_query(&client, collection_name, &query).await?;
+    let resp = qdrant::run_query(&client, "repl", file_name, &query).await?;
 
     let mut results = Vec::new();
 

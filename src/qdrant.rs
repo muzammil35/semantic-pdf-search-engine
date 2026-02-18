@@ -4,19 +4,18 @@ use qdrant_client::qdrant::Distance;
 use qdrant_client::qdrant::SearchPointsBuilder;
 use qdrant_client::qdrant::SearchResponse;
 use qdrant_client::qdrant::UpsertPointsBuilder;
-use qdrant_client::qdrant::{CreateCollectionBuilder, VectorParamsBuilder};
+use qdrant_client::qdrant::{CreateCollectionBuilder, VectorParamsBuilder, Filter, Condition};
 use qdrant_client::qdrant::{PointStruct, Value};
 use std::collections::HashMap;
 
 use crate::embed;
 
 pub async fn setup_qdrant(
-    collection_name: &str,
 ) -> Result<Qdrant, QdrantError> {
     let client = Qdrant::from_url("http://localhost:6334").build()?;
     client
         .create_collection(
-            CreateCollectionBuilder::new(collection_name).vectors_config(VectorParamsBuilder::new(
+            CreateCollectionBuilder::new("repl").vectors_config(VectorParamsBuilder::new(
                 embed::get_dim() as u64,
                 Distance::Dot,
             )),
@@ -44,28 +43,30 @@ pub async fn init_collection(
 pub async fn store_embeddings(
     client: &Qdrant,
     collection_name: &str,
+    filename: &str,
     embeddings: embed::Embeddings,
-) -> Result<(), QdrantError> {
-    // Ensure both vectors have the same length
+) -> Result<String, QdrantError> {
     assert_eq!(
         embeddings.original.len(),
         embeddings.embedded.len(),
         "Original and embedded vectors must have the same length"
     );
 
+    let unique_filename = format!("{}_{}", filename, uuid::Uuid::new_v4());
+
     let points: Vec<PointStruct> = embeddings
         .original
         .into_iter()
         .zip(embeddings.embedded)
-        .enumerate()
-        .map(|(id, (chunk, embedding))| {
+        .map(|(chunk, embedding)| {
             let mut payload = HashMap::new();
+            payload.insert("filename".to_string(), Value::from(unique_filename.clone()));
             payload.insert("text".to_string(), Value::from(chunk.content.clone()));
-            // have to insert the page as a float as the qdrant crate does not provide support for u16
             payload.insert("page".to_string(), Value::from(chunk.page as f32));
             PointStruct::new(
-                id as u64, // Use index as ID
-                embedding, payload,
+                uuid::Uuid::new_v4().to_string(),
+                embedding,
+                payload,
             )
         })
         .collect();
@@ -74,13 +75,13 @@ pub async fn store_embeddings(
         .upsert_points(UpsertPointsBuilder::new(collection_name, points).wait(true))
         .await?;
     dbg!(response);
-
-    Ok(())
+    Ok(unique_filename)
 }
 
 pub async fn run_query(
     client: &Qdrant,
     collection_name: &str,
+    filename: &str,
     query: &str,
 ) -> Result<SearchResponse, anyhow::Error> {
     let emb_query = match embed::embed_query(query) {
@@ -90,10 +91,17 @@ pub async fn run_query(
             return Err(e);
         }
     };
+
+    let filename_filter = Filter::must([Condition::matches(
+        "filename",
+        filename.to_string(),
+    )]);
+
     let search_result = client
         .search_points(
             SearchPointsBuilder::new(collection_name, emb_query, 5)
-                .with_payload(true) // This enables payload return
+                .filter(filename_filter)
+                .with_payload(true)
                 .build(),
         )
         .await?;

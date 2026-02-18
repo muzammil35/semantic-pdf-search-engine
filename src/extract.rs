@@ -1,8 +1,6 @@
 use pdf_oxide::PdfDocument;
 use rayon::prelude::*;
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::process::Command;
 
 #[derive(Deserialize)]
 struct PageDTO {
@@ -16,13 +14,11 @@ pub struct Page {
     pub page_num: u16,
 }
 pub struct File {
-    filename: String,
     pages: Vec<Page>,
 }
 
 #[derive(Deserialize)]
 struct PythonOutput {
-    full_text: String,
     pages: Vec<PageDTO>,
 }
 
@@ -54,8 +50,7 @@ pub fn extract_pdf_file(pdf_path: &str) -> File {
         .collect();
 
     File {
-        filename: pdf_path.to_string(),
-        pages,
+        pages
     }
 }
 
@@ -86,7 +81,6 @@ pub fn extract_text(file: &str) -> File {
         .collect();
 
     File {
-        filename: (*file).to_string(),
         pages: pages,
     }
 }

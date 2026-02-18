@@ -3,6 +3,7 @@ use lopdf::Document;
 use regex::Regex;
 use text_splitter::TextSplitter;
 use unicode_segmentation::UnicodeSegmentation;
+use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -15,7 +16,7 @@ pub enum PdfSource {
     Bytes(Vec<u8>),
 }
 
-pub fn extract_and_chunk(pdf_source: PdfSource) -> Result<Vec<Chunk>, Box<dyn std::error::Error>> {
+pub fn extract_and_chunk(pdf_source: PdfSource) -> Result<Vec<Chunk>> {
     let doc = match pdf_source {
         PdfSource::Path(path) => Document::load(path)?,
         PdfSource::Bytes(vec) => Document::load_mem(&vec)?,

@@ -6,6 +6,7 @@ use axum::{
     response::{Html, IntoResponse},
     routing::{get, post},
 };
+use anyhow::Result;
 use axum::http::StatusCode;
 use qdrant_client::Qdrant;
 use serde::Deserialize;
@@ -55,6 +56,7 @@ async fn main() {
     let qdrant_client = Qdrant::from_url("http://localhost:6334")
         .build()
         .expect("Failed to connect to Qdrant");
+    qdrant::delete_all_collections(&qdrant_client).await;
 
     let shared_state = AppState {
         id_map,
@@ -105,43 +107,61 @@ async fn handle_upload(
 
         if name == "pdf" {
             println!("Received file: {} ({} bytes)", filename, data.len());
+
             // Generate unique ID for this upload
             let id = Uuid::new_v4().to_string();
-            // Store the mapping
+
+            // Store a placeholder in the map
             {
                 let mut map = id_map.write().await;
-                map.insert(id.clone(), filename.clone());
+                map.insert(id.clone(), "processing".to_string());
             }
-            // Spawn background processing
+
+            // Clone data for background task
             let data_clone = data.to_vec();
             let filename_clone = filename.clone();
-            tokio::task::spawn(async move {
+            let id_clone = id.clone();
+            let id_map_clone = id_map.clone();
+
+            tokio::spawn(async move {
                 let start = Instant::now();
                 match process_file(&filename_clone, data_clone.into(), qdrant).await {
-                    Ok(_) => println!("Processing done: {:?}", start.elapsed()),
-                    Err(e) => eprintln!("Processing failed: {:?}", e),
+                    Ok(unique_filename) => {
+                        println!("Processing done: {:?}", start.elapsed());
+
+                        // Update the map with the actual result
+                        let mut map = id_map_clone.write().await;
+                        map.insert(id_clone, unique_filename);
+                    }
+                    Err(e) => {
+                        eprintln!("Processing failed: {:?}", e);
+                        let mut map = id_map_clone.write().await;
+                        map.insert(id_clone, "failed".to_string());
+                    }
                 }
             });
-            // Return the ID as JSON
+
+            // Return immediately with the ID
             return Ok((StatusCode::OK, Json(UploadResponse { id })));
         }
     }
     Err(StatusCode::BAD_REQUEST)
 }
 
+
 async fn process_file(
     filename: &str,
     pdf_data: Bytes,
     client: Arc<Qdrant>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<String> {
     let chunks = chunk::extract_and_chunk(chunk::PdfSource::Bytes(pdf_data.to_vec()))?;
     let embedded_chunks = embed::get_embeddings(chunks)?;
-    let _ = qdrant::init_collection(&client, filename).await?;
-    let _ = qdrant::store_embeddings(&client, filename, embedded_chunks).await?;
+    let _ = qdrant::init_collection(&client, "embedded_pdfs").await?;
+    let unique_filename = qdrant::store_embeddings(&client, "embedded_pdfs", filename, embedded_chunks).await?;
 
     println!("File processed successfully!");
   
-    Ok(())
+    Ok(unique_filename)
 }
 
 async fn search_handler(
@@ -166,14 +186,14 @@ async fn search_handler(
             "Query parameter 'id' cannot be empty".to_string(),
         ));
     }
-    let collection_name = {
+    let file_name = {
         let map = id_map.read().await;
         map.get(id)
             .ok_or_else(|| (StatusCode::NOT_FOUND, format!("ID '{}' not found", id)))?
             .clone()
     };
 
-    match run_search_api(&qdrant, &collection_name, query.to_string()).await {
+    match run_search_api(&qdrant, &file_name, query.to_string()).await {
         Ok(results) => Ok(Json(results)),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -185,7 +205,7 @@ async fn search_handler(
 // API version of search (returns JSON)
 async fn run_search_api(
     client: &Qdrant,
-    collection_name: &str,
+    file_name: &str,
     query: String,
 ) -> Result<Vec<SearchResult>, Box<dyn std::error::Error>> {
     let query = query.trim();
@@ -193,7 +213,7 @@ async fn run_search_api(
         return Ok(vec![]);
     }
 
-    let resp = qdrant::run_query(&client, collection_name, &query).await?;
+    let resp = qdrant::run_query(&client, "embedded_pdfs", file_name, &query).await?;
 
     let mut results = Vec::new();
 
