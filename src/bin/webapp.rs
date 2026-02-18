@@ -2,11 +2,11 @@ use axum::{
     Router,
     body::Bytes,
     extract::DefaultBodyLimit,
-    extract::{Json, Multipart, Path, Query, State},
+    extract::{Json, Multipart, Query, State},
     response::{Html, IntoResponse},
     routing::{get, post},
 };
-use axum::{http::StatusCode, http::header};
+use axum::http::StatusCode;
 use qdrant_client::Qdrant;
 use serde::Deserialize;
 use serde::Serialize;
@@ -20,7 +20,6 @@ use tower_http::services::ServeDir;
 use uuid::Uuid;
 use vb::chunk;
 use vb::embed;
-use vb::extract;
 use vb::qdrant;
 
 // Shared state for ID to filename mapping
@@ -137,8 +136,8 @@ async fn process_file(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let chunks = chunk::extract_and_chunk(chunk::PdfSource::Bytes(pdf_data.to_vec()))?;
     let embedded_chunks = embed::get_embeddings(chunks)?;
-    let init_response = qdrant::init_collection(&client, filename).await?;
-    let embed_response = qdrant::store_embeddings(&client, filename, embedded_chunks).await?;
+    let _ = qdrant::init_collection(&client, filename).await?;
+    let _ = qdrant::store_embeddings(&client, filename, embedded_chunks).await?;
 
     println!("File processed successfully!");
   

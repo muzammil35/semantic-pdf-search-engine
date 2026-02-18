@@ -1,16 +1,14 @@
 use axum::extract::Query;
 use axum::{Json, Router, body::Body, http::StatusCode, response::Html, routing::get};
-use clap::{Arg, Parser, arg, command};
+use clap::{Parser, arg, command};
 use qdrant_client::Qdrant;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
 use std::io::{self, BufRead, Write};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tower_http::services::ServeDir;
 use vb::chunk;
 use vb::embed;
-use vb::extract;
 use vb::qdrant;
 
 #[derive(Parser, Debug)]

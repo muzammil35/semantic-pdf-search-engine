@@ -20,8 +20,6 @@ pub fn extract_and_chunk(pdf_source: PdfSource) -> Result<Vec<Chunk>, Box<dyn st
         PdfSource::Path(path) => Document::load(path)?,
         PdfSource::Bytes(vec) => Document::load_mem(&vec)?,
     };
-    // Extract text from all pages
-    let mut full_text = String::new();
     let pages = doc.get_pages();
 
     let mut chunks: Vec<Chunk> = Vec::new();
