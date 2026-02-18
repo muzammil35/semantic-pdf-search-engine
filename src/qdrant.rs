@@ -1,9 +1,6 @@
-use fastembed::Embedding;
 use qdrant_client::Qdrant;
 use qdrant_client::QdrantError;
 use qdrant_client::qdrant::Distance;
-use qdrant_client::qdrant::QueryPointsBuilder;
-use qdrant_client::qdrant::QueryResponse;
 use qdrant_client::qdrant::SearchPointsBuilder;
 use qdrant_client::qdrant::SearchResponse;
 use qdrant_client::qdrant::UpsertPointsBuilder;
@@ -14,23 +11,34 @@ use std::collections::HashMap;
 use crate::embed;
 
 pub async fn setup_qdrant(
-    embedded_chunks: &embed::Embeddings,
     collection_name: &str,
 ) -> Result<Qdrant, QdrantError> {
     let client = Qdrant::from_url("http://localhost:6334").build()?;
-
-    delete_all_collections(&client).await;
-
     client
         .create_collection(
             CreateCollectionBuilder::new(collection_name).vectors_config(VectorParamsBuilder::new(
-                embedded_chunks.get_dim() as u64,
+                embed::get_dim() as u64,
                 Distance::Dot,
             )),
         )
         .await?;
 
     Ok(client)
+}
+
+pub async fn init_collection(
+    client: &Qdrant,
+    collection_name: &str,
+) -> Result<(), QdrantError> {
+    client
+        .create_collection(
+            CreateCollectionBuilder::new(collection_name).vectors_config(VectorParamsBuilder::new(
+                embed::get_dim() as u64,
+                Distance::Dot,
+            )),
+        )
+        .await?;
+    Ok(())
 }
 
 pub async fn store_embeddings(
@@ -51,13 +59,10 @@ pub async fn store_embeddings(
         .zip(embeddings.embedded)
         .enumerate()
         .map(|(id, (chunk, embedding))| {
-            // Create payload with original chunk data from Embeddings.original
             let mut payload = HashMap::new();
             payload.insert("text".to_string(), Value::from(chunk.content.clone()));
             // have to insert the page as a float as the qdrant crate does not provide support for u16
             payload.insert("page".to_string(), Value::from(chunk.page as f32));
-            // Add any other chunk fields you want to store
-
             PointStruct::new(
                 id as u64, // Use index as ID
                 embedding, payload,
@@ -65,7 +70,6 @@ pub async fn store_embeddings(
         })
         .collect();
 
-    // Insert points into collection
     let response = client
         .upsert_points(UpsertPointsBuilder::new(collection_name, points).wait(true))
         .await?;

@@ -1,12 +1,12 @@
 use axum::extract::Query;
+use axum::{Json, Router, body::Body, http::StatusCode, response::Html, routing::get};
 use clap::{Arg, Parser, arg, command};
 use qdrant_client::Qdrant;
 use serde::Deserialize;
+use serde::Serialize;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-use axum::{Json, Router, body::Body, http::StatusCode, response::Html, routing::get};
-use serde::Serialize;
 use tower_http::services::ServeDir;
 use vb::chunk;
 use vb::embed;
@@ -131,7 +131,9 @@ fn print_help() {
     println!("Available commands:");
     println!("  file <path>                        - Process and index a file");
     println!("  search <collection> <query>        - Search in a collection");
-    println!("  serve <file_path> <collection>     - Start web server with PDF viewer and search API");
+    println!(
+        "  serve <file_path> <collection>     - Start web server with PDF viewer and search API"
+    );
     println!("  help                               - Show this help message");
     println!("  exit/quit                          - Exit the program");
 }
@@ -145,7 +147,7 @@ async fn process_file(file_path: &str) -> Result<(), Box<dyn std::error::Error>>
     //let chunks = chunk::chunk_per_page(pages);
     let chunks = chunk::extract_and_chunk(chunk::PdfSource::Path(file_path.to_string()))?;
     let embedded_chunks = embed::get_embeddings(chunks)?;
-    let client = qdrant::setup_qdrant(&embedded_chunks, file_path).await?;
+    let client = qdrant::setup_qdrant( file_path).await?;
     let response = qdrant::store_embeddings(&client, file_path, embedded_chunks).await?;
 
     println!("File processed successfully!");
@@ -198,21 +200,21 @@ async fn run_search_api(
     let resp = qdrant::run_query(&client, collection_name, &query).await?;
 
     let mut results = Vec::new();
-    
+
     for point in resp.result {
         if let Some(text_value) = point.payload.get("text") {
             if let Some(page_value) = point.payload.get("page") {
                 if let Some(text) = text_value.as_str() {
                     // Extract page number - handle different number types
                     use qdrant_client::qdrant::value::Kind;
-                    
+
                     let page = match &page_value.kind {
                         Some(Kind::DoubleValue(d)) => *d as i64,
                         Some(Kind::IntegerValue(i)) => *i,
                         Some(Kind::StringValue(s)) => s.parse::<i64>().unwrap_or(1),
                         _ => 1,
                     };
-                        
+
                     results.push(SearchResult {
                         page,
                         text: text.to_string(),
@@ -231,7 +233,7 @@ async fn search_handler(
     axum::extract::State(collection_name): axum::extract::State<String>,
 ) -> Result<Json<Vec<SearchResult>>, (StatusCode, String)> {
     let query = params.q.trim();
-    
+
     if query.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -248,7 +250,10 @@ async fn search_handler(
     }
 }
 
-async fn start_server(file_path: &str, collection_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn start_server(
+    file_path: &str,
+    collection_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let file_path = file_path.to_string();
     let collection_name = collection_name.to_string();
 

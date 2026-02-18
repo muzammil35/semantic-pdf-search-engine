@@ -77,9 +77,8 @@ pub fn embed_query(query: &str) -> Result<Vec<f32>, Error> {
     Ok(embedded.into_iter().next().unwrap())
 }
 
-impl Embeddings {
-    pub fn get_dim(&self) -> usize {
-        let model_info = EmbeddingModel::get_model_info(&EmbeddingModel::AllMiniLML6V2);
-        model_info.expect("Model info should always exist").dim
-    }
+pub fn get_dim() -> usize {
+    let model_info = EmbeddingModel::get_model_info(&EmbeddingModel::AllMiniLML6V2);
+    model_info.expect("Model info should always exist").dim
 }
+

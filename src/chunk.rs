@@ -1,24 +1,21 @@
 use crate::extract::Page;
-use rayon::prelude::*;
+use lopdf::Document;
 use regex::Regex;
 use text_splitter::TextSplitter;
 use unicode_segmentation::UnicodeSegmentation;
-use lopdf::Document;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
     pub content: String,
     pub page: u16,
 }
-use std::path::PathBuf;
 
 pub enum PdfSource {
     Path(String),
     Bytes(Vec<u8>),
 }
 
- pub fn extract_and_chunk(pdf_source: PdfSource) -> Result<Vec<Chunk>, Box<dyn std::error::Error>> {
-
+pub fn extract_and_chunk(pdf_source: PdfSource) -> Result<Vec<Chunk>, Box<dyn std::error::Error>> {
     let doc = match pdf_source {
         PdfSource::Path(path) => Document::load(path)?,
         PdfSource::Bytes(vec) => Document::load_mem(&vec)?,
@@ -27,12 +24,11 @@ pub enum PdfSource {
     let mut full_text = String::new();
     let pages = doc.get_pages();
 
-
     let mut chunks: Vec<Chunk> = Vec::new();
 
     // Create splitter - overlap is passed to chunks() method, not in constructor
     let splitter = TextSplitter::new(500); // chunk size
-    
+
     for &page_num in pages.keys() {
         if let Ok(text) = doc.extract_text(&[page_num]) {
             let chunk_texts: Vec<_> = splitter.chunks(&text).collect();
@@ -44,13 +40,11 @@ pub enum PdfSource {
                     chunks.push(Chunk {
                         content: chunk.to_string(),
                         page: (page_num) as u16,
-                    });    
-                }
-                else {
+                    });
+                } else {
                     filtered_count += 1;
                     println!("FILTERED: {:?}", &chunk);
                 }
-                
             }
             println!("Filtered out {} chunks", filtered_count);
         }
@@ -60,34 +54,34 @@ pub enum PdfSource {
     for (i, chunk) in chunks.iter().enumerate() {
         println!("\n--- Chunk {} ---\n{}", i + 1, chunk.content);
     }
-    
+
     Ok(chunks)
 }
 
 fn is_valid_chunk(text: &str) -> bool {
     let trimmed = text.trim();
-    
+
     // 1. Minimum length check (at least 50 characters for meaningful content)
     if trimmed.len() < 50 {
         return false;
     }
-    
+
     // 2. Must contain at least one complete sentence
     if !has_complete_sentence(trimmed) {
         return false;
     }
-    
+
     // 3. Filter out code-like patterns
     if looks_like_code(trimmed) {
         return false;
     }
-    
+
     // 4. Check word count (at least 8 words)
     let word_count = trimmed.split_whitespace().count();
     if word_count < 8 {
         return false;
     }
-    
+
     // 5. Check for reasonable ratio of alphabetic characters
     let alpha_count = trimmed.chars().filter(|c| c.is_alphabetic()).count();
     let alpha_ratio = alpha_count as f32 / trimmed.len() as f32;
@@ -103,7 +97,10 @@ fn is_valid_chunk(text: &str) -> bool {
 
     // 7. Check for common single-word artifacts
     let single_word_artifacts = ["foreword", "appendix", "index", "references"];
-    if single_word_artifacts.iter().any(|&word| trimmed.to_lowercase() == word) {
+    if single_word_artifacts
+        .iter()
+        .any(|&word| trimmed.to_lowercase() == word)
+    {
         return false;
     }
 
@@ -113,8 +110,8 @@ fn is_valid_chunk(text: &str) -> bool {
         if ellipsis_count > 2 {
             return false;
         }
-}
-    
+    }
+
     true
 }
 
@@ -123,37 +120,51 @@ fn has_complete_sentence(text: &str) -> bool {
     let has_period = text.contains(". ") || text.ends_with('.');
     let has_question = text.contains("? ") || text.ends_with('?');
     let has_exclamation = text.contains("! ") || text.ends_with('!');
-    
+
     // Must have at least one sentence ender and start with capital letter
-    (has_period || has_question || has_exclamation) && 
-    text.chars().next().map_or(false, |c| c.is_uppercase())
+    (has_period || has_question || has_exclamation)
+        && text.chars().next().map_or(false, |c| c.is_uppercase())
 }
 
 fn looks_like_code(text: &str) -> bool {
     // Common code patterns
     let code_indicators = [
-        "//", "/*", "*/", "*/\n", 
-        "{}", "[]", "();",
-        "function ", "const ", "let ", "var ",
-        "def ", "class ", "import ",
-        "```", "fn ", "pub fn",
+        "//",
+        "/*",
+        "*/",
+        "*/\n",
+        "{}",
+        "[]",
+        "();",
+        "function ",
+        "const ",
+        "let ",
+        "var ",
+        "def ",
+        "class ",
+        "import ",
+        "```",
+        "fn ",
+        "pub fn",
     ];
-    
+
     // Check for multiple code indicators
-    let indicator_count = code_indicators.iter()
+    let indicator_count = code_indicators
+        .iter()
         .filter(|&pattern| text.contains(pattern))
         .count();
-    
+
     // If 2+ code indicators, likely code
     if indicator_count >= 2 {
         return true;
     }
-    
+
     // Check if mostly punctuation/symbols
-    let symbol_count = text.chars()
+    let symbol_count = text
+        .chars()
         .filter(|c| matches!(c, '{' | '}' | '[' | ']' | '(' | ')' | ';' | '/' | '*'))
         .count();
-    
+
     symbol_count > text.len() / 4
 }
 
@@ -180,7 +191,7 @@ pub fn chunk_pages_with_splitter(pages: &[Page], max_chars: usize) -> Vec<Chunk>
 pub fn chunk_per_page(pages: &[Page]) -> Vec<Chunk> {
     let mut return_chunks: Vec<Chunk> = Vec::new();
     for page in pages {
-        let chunks = smart_chunk_text(&page.content, 2000, 200, true);
+        let chunks = smart_chunk_text(&page.content, 2000, true);
         for chunk in chunks {
             if is_garbage_sentence(&chunk) {
                 continue;
@@ -280,16 +291,16 @@ fn split_into_sentences(text: &str) -> Vec<String> {
 pub fn clean_pdf_text_robust(text: &str, remove_headers: bool) -> String {
     let mut cleaned = text.to_string();
 
-    // 1️⃣ Optional: remove section headers
+    // 1: Optional: remove section headers
     if remove_headers {
         cleaned = remove_section_headers(&cleaned);
     }
 
-    // 2️⃣ Remove TOC / leader lines like ". . . 415 . . . 422"
+    // 2: Remove TOC / leader lines like ". . . 415 . . . 422"
     let toc_leader_regex = Regex::new(r"(?m)^[\s\d]*([.]\s*){5,}[\s\d]*$").unwrap();
     cleaned = toc_leader_regex.replace_all(&cleaned, "").to_string();
 
-    // 3️⃣ Remove lines that are mostly non-letters
+    // 3: Remove lines that are mostly non-letters
     cleaned = cleaned
         .lines()
         .filter(|line| {
@@ -300,11 +311,11 @@ pub fn clean_pdf_text_robust(text: &str, remove_headers: bool) -> String {
         .collect::<Vec<_>>()
         .join("\n");
 
-    // 4️⃣ Fix hyphenated line breaks ("rejec-\nted" → "rejected")
+    // 4: Fix hyphenated line breaks ("rejec-\nted" → "rejected")
     let hyphen_linebreak_regex = Regex::new(r"(?m)-\n").unwrap();
     cleaned = hyphen_linebreak_regex.replace_all(&cleaned, "").to_string();
 
-    // 5️⃣ Join lines with space (avoid word merges)
+    // 5: Join lines with space (avoid word merges)
     let mut fixed_text = String::new();
     for line in cleaned.lines() {
         let line = line.trim();
@@ -318,17 +329,17 @@ pub fn clean_pdf_text_robust(text: &str, remove_headers: bool) -> String {
     }
     cleaned = fixed_text;
 
-    // 6️⃣ Remove control characters except newline/tab
+    // 6: Remove control characters except newline/tab
     cleaned = cleaned
         .chars()
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
         .collect();
 
-    // 7️⃣ Normalize whitespace
+    // 7: Normalize whitespace
     let whitespace_regex = Regex::new(r"\s+").unwrap();
     cleaned = whitespace_regex.replace_all(&cleaned, " ").to_string();
 
-    // 8️⃣ Replace common PDF ligatures
+    // 8: Replace common PDF ligatures
     cleaned = cleaned
         .replace("ﬁ", "fi")
         .replace("ﬂ", "fl")
@@ -341,7 +352,7 @@ pub fn clean_pdf_text_robust(text: &str, remove_headers: bool) -> String {
         .replace("\u{200B}", "")
         .replace("\u{00A0}", " ");
 
-    // 9️⃣ Remove repeated punctuation artifacts
+    // 9: Remove repeated punctuation artifacts
     let punct_regex = Regex::new(r"([.,!?;:]){3,}").unwrap();
     cleaned = punct_regex.replace_all(&cleaned, "$1").to_string();
 
@@ -414,7 +425,6 @@ fn is_garbage_sentence(s: &str) -> bool {
 pub fn smart_chunk_text(
     text: &str,
     chunk_size: usize,
-    overlap: usize,
     remove_headers: bool,
 ) -> Vec<String> {
     let cleaned = clean_pdf_text_robust(text, remove_headers);
