@@ -58,6 +58,8 @@ async fn main() {
         .expect("Failed to connect to Qdrant");
     qdrant::delete_all_collections(&qdrant_client).await;
 
+    let _ = qdrant::init_collection(&qdrant_client, "embedded_pdfs").await;
+
     let shared_state = AppState {
         id_map,
         qdrant: Arc::new(qdrant_client),
@@ -67,7 +69,7 @@ async fn main() {
         .route("/upload", post(handle_upload))
         .route("/api/search", get(search_handler))
         .nest_service("/static", ServeDir::new("static"))
-        .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10MB
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024)) // 10MB
         .with_state(shared_state.clone());
 
     // Run the server
@@ -156,7 +158,6 @@ async fn process_file(
 ) -> Result<String> {
     let chunks = chunk::extract_and_chunk(chunk::PdfSource::Bytes(pdf_data.to_vec()))?;
     let embedded_chunks = embed::get_embeddings(chunks)?;
-    let _ = qdrant::init_collection(&client, "embedded_pdfs").await?;
     let unique_filename = qdrant::store_embeddings(&client, "embedded_pdfs", filename, embedded_chunks).await?;
 
     println!("File processed successfully!");
@@ -192,6 +193,8 @@ async fn search_handler(
             .ok_or_else(|| (StatusCode::NOT_FOUND, format!("ID '{}' not found", id)))?
             .clone()
     };
+
+    println!("This is the unique filename: {:?}", file_name);
 
     match run_search_api(&qdrant, &file_name, query.to_string()).await {
         Ok(results) => Ok(Json(results)),

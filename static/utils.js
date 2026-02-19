@@ -48,6 +48,8 @@ export async function performSearchWithId(query, Id,  pdfViewer, updateMatchCoun
     state.backendMatches = results.slice(0, 5);
     state.currentMatchIndex = 0;
 
+    console.log(state.backendMatches);
+
     if (state.backendMatches.length === 0) {
       updateMatchCounter(0, 0);
       clearHighlights();
