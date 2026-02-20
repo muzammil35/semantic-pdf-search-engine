@@ -26,25 +26,17 @@
 
         .hidden { display: none !important; }
 
-        /* Text layer must be fully opaque or highlights disappear */
         .textLayer { opacity: 1; }
-
-         /* Make text itself transparent so the PDF canvas shows through,
-         but highlights (which are backgrounds) remain fully visible */
         .textLayer span { color: transparent; }
+        .textLayer ::selection { background: rgba(79, 70, 229, 0.3); }
 
-        .textLayer ::selection { background: rgba(79, 70, 229, 0.4); }
-
-        /* Use !important to beat the pdf_viewer.min.css defaults */
         .textLayer .highlight {
-            background-color: rgba(255, 220, 0, 0.6) !important;
+            background-color: rgba(251, 191, 36, 0.45);
             border-radius: 2px;
-            mix-blend-mode: multiply;
         }
         .textLayer .highlight.selected {
-            background-color: rgba(255, 120, 0, 0.75) !important;
+            background-color: rgba(251, 130, 0, 0.65);
             border-radius: 2px;
-            mix-blend-mode: multiply;
         }
 
         #viewerContainer {
@@ -382,13 +374,15 @@
         const zoomSelect    = document.getElementById('zoom-select');
 
         // ── Viewer state ──────────────────────────────────────────────────────
-        let pdfData      = null;
-        let documentId   = null;
-        let eventBus     = null;
-        let pdfViewer    = null;
-        let pdfDocument  = null;
-        let totalMatches = 0;
-        let currentMatch = 0;
+        let pdfData              = null;
+        let documentId           = null;
+        let eventBus;
+        let pdfViewer;
+        let pdfDocument;
+        let pdfFindController;
+        let totalMatches         = 0;
+        let currentMatch         = 0;
+        let lastDispatchedQuery  = '';  // tracks the reconciled phrase, not the raw input
 
         // ── Page text cache ───────────────────────────────────────────────────
         const pageTextCache = new Map();
@@ -436,8 +430,11 @@
             const { page, text: backendText } = match;
             const pdfJsText = await getPdfJsPageText(page);
 
-            const first4Words     = backendText.trim().split(/\s+/).slice(0, 4).join(' ');
-            const pageWords       = pdfJsText.trim().split(/\s+/);
+            const first4Words = backendText.trim().split(/\s+/).slice(0, 4).join(' ');
+            const pageWords   = pdfJsText.trim().split(/\s+/);
+
+            console.log('[reconcile] backend first 4 words:', first4Words);
+            console.log('[reconcile] pdfjs page word count:', pageWords.length);
 
             let bestScore  = 0;
             let bestPhrase = null;
@@ -450,6 +447,8 @@
                     bestPhrase = candidate;
                 }
             }
+
+            console.log('[reconcile] best match:', bestPhrase, '| score:', bestScore.toFixed(3));
 
             // Threshold of 0.6 works well for most prose; lower if getting misses
             return bestScore >= 0.6 ? bestPhrase : null;
@@ -490,50 +489,31 @@
             }
         });
 
-        // ── Back button ───────────────────────────────────────────────────────
-        backButton.addEventListener('click', () => {
-            dispatchFind('');
-            pageTextCache.clear();
-
-            viewerSection.classList.add('hidden');
-            uploadSection.classList.remove('hidden');
-            uploadForm.reset();
-
-            pdfData      = null;
-            documentId   = null;
-            totalMatches = 0;
-            currentMatch = 0;
-
-            if (pdfViewer) pdfViewer.cleanup();
-            pdfViewer   = null;
-            pdfDocument = null;
-            eventBus    = null;
-        });
-
+       
         // ── Viewer init ───────────────────────────────────────────────────────
         function initializeViewer() {
+             // Initialize EventBus for coordinating viewer components
             eventBus = new pdfjsViewer.EventBus();
+            
+            // Create link service for navigation
+            pdfLinkService = new pdfjsViewer.PDFLinkService({
+                eventBus: eventBus,
+            });
 
-            const pdfLinkService = new pdfjsViewer.PDFLinkService({ eventBus });
-
+            // Create PDF viewer
             pdfViewer = new pdfjsViewer.PDFViewer({
-                container:         document.getElementById('viewerContainer'),
-                viewer:            document.getElementById('viewer'),
-                eventBus,
-                linkService:       pdfLinkService,
-                textLayerMode:     1,
+                container: document.getElementById('viewerContainer'),
+                viewer: document.getElementById('viewer'),
+                eventBus: eventBus,
+                linkService: pdfLinkService,
+                textLayerMode: 1, // 0=disable, 1=enable, 2=enable enhanced
                 removePageBorders: false,
             });
 
             pdfLinkService.setViewer(pdfViewer);
+            
+            console.log('PDFViewer initialized with textLayerMode:', pdfViewer.textLayerMode);
 
-            const pdfFindController = new pdfjsViewer.PDFFindController({
-                eventBus,
-                linkService: pdfLinkService,
-                pdfViewer,
-            });
-
-            pdfViewer.findController = pdfFindController;
 
             eventBus.on('updatefindmatchescount', ({ matchesCount }) => {
                 totalMatches = matchesCount.total;
@@ -561,12 +541,24 @@
             loading.style.display = 'block';
 
             try {
+
+                // Create find controller after document is loaded
+                pdfFindController = new pdfjsViewer.PDFFindController({
+                    eventBus: eventBus,
+                    linkService: pdfLinkService,
+                    pdfViewer: pdfViewer,
+                });
+
+                // Set the find controller on the viewer BEFORE loading
+                pdfViewer.findController = pdfFindController;
+
                 const loadingTask = pdfjsLib.getDocument({ data: pdfData });
                 pdfDocument = await loadingTask.promise;
 
                 pdfViewer.setDocument(pdfDocument);
-                pdfViewer.findController.setDocument(pdfDocument);
-
+                pdfLinkService.setDocument(pdfDocument);
+                pdfFindController.setDocument(pdfDocument);
+         
                 pdfViewer.currentScaleValue = '1';
                 loading.style.display = 'none';
 
@@ -579,14 +571,15 @@
         // ── Find dispatch ─────────────────────────────────────────────────────
         function dispatchFind(query, findPrevious = false, type = 'find') {
             if (!eventBus) return;
+            if (type === 'find') lastDispatchedQuery = query;
             eventBus.dispatch('find', {
-                source:        window,
-                type,
                 query,
+                phraseSearch: true,
                 caseSensitive: false,
-                entireWord:    false,
-                highlightAll:  true,
+                entireWord: false,
+                highlightAll: true,
                 findPrevious,
+                type,
             });
         }
 
@@ -633,7 +626,10 @@
                         if (!res.ok) throw new Error('Search failed');
                         const results = await res.json();
 
+                        console.log('[search] backend results:', results);
+
                         if (results.length === 0) {
+                            console.log('[search] no backend results, clearing highlights');
                             dispatchFind('');
                             totalMatches = 0;
                             currentMatch = 0;
@@ -647,7 +643,12 @@
                         // Reconcile the backend snippet against PDF.js extracted text,
                         // then hand the reconciled phrase to PDFFindController
                         const reconciled = await reconcileMatch(results[0]);
-                        dispatchFind(reconciled ?? results[0].text);
+                        console.log('[search] backend snippet:', results[0].text);
+                        console.log('[search] reconciled phrase:', reconciled);
+
+                        const phraseToFind = reconciled ?? results[0].text;
+                        console.log('[search] dispatching find for:', phraseToFind);
+                        dispatchFind(phraseToFind);
 
                     } catch (err) {
                         console.error('Backend search error:', err);
@@ -657,13 +658,15 @@
             });
 
             nextButton.addEventListener('click', () => {
-                if (!searchInput.value.trim()) return;
-                dispatchFind(searchInput.value.trim(), false, 'again');
+                if (!lastDispatchedQuery) return;
+                console.log('[nav] next, query:', lastDispatchedQuery);
+                dispatchFind(lastDispatchedQuery, false, 'again');
             });
 
             prevButton.addEventListener('click', () => {
-                if (!searchInput.value.trim()) return;
-                dispatchFind(searchInput.value.trim(), true, 'again');
+                if (!lastDispatchedQuery) return;
+                console.log('[nav] prev, query:', lastDispatchedQuery);
+                dispatchFind(lastDispatchedQuery, true, 'again');
             });
 
             searchInput.addEventListener('keydown', (e) => {
@@ -672,7 +675,8 @@
                     if (e.shiftKey) prevButton.click();
                     else            nextButton.click();
                 } else if (e.key === 'Escape') {
-                    searchInput.value = '';
+                    searchInput.value   = '';
+                    lastDispatchedQuery = '';
                     dispatchFind('');
                     totalMatches = 0;
                     currentMatch = 0;

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Search Pdf</title>
+    <title>PDF Viewer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.js"></script>
@@ -11,9 +11,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="shortcut icon" href="/static/favicon/favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png" />
-    <link rel="manifest" href="/static/favcicon/site.webmanifest" />
     <style>
         *, *::before, *::after { box-sizing: border-box; }
 
@@ -26,19 +23,20 @@
 
         .hidden { display: none !important; }
 
-        .textLayer { opacity: 1; }
-        .textLayer span { color: transparent; }
+        /* ── PDF text layer ── */
+        .textLayer { opacity: 0.2; }
         .textLayer ::selection { background: rgba(79, 70, 229, 0.3); }
 
         .textLayer .highlight {
-            background-color: rgba(251, 191, 36, 0.45);
+            background-color: rgba(255, 237, 0, 0.4);
             border-radius: 2px;
         }
         .textLayer .highlight.selected {
-            background-color: rgba(251, 130, 0, 0.65);
+            background-color: rgba(255, 140, 0, 0.6);
             border-radius: 2px;
         }
 
+        /* ── Viewer layout ── */
         #viewerContainer {
             position: absolute;
             overflow: auto;
@@ -52,9 +50,19 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 0;
+            padding: 1rem;
         }
 
+        .page {
+            position: relative;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            background: white;
+        }
+
+        .page canvas { display: block; }
+
+        /* ── Search bar ── */
         #search-bar {
             position: fixed;
             top: 0;
@@ -69,6 +77,15 @@
             border-bottom: 1px solid rgba(0,0,0,0.06);
         }
 
+        .search-bar-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        /* ── Upload card ── */
         .upload-container {
             display: flex;
             flex-direction: column;
@@ -90,7 +107,6 @@
         }
 
         .upload-card h1 {
-            font-family: 'Inter', sans-serif;
             font-size: 1.625rem;
             font-weight: 700;
             letter-spacing: -0.03em;
@@ -171,6 +187,7 @@
         .btn-primary:active { transform: translateY(0); }
         .btn-primary:disabled { background: #d1d5db; cursor: not-allowed; transform: none; box-shadow: none; }
 
+        /* ── Search bar buttons ── */
         .btn-search {
             padding: 0.5rem 1rem;
             border: 1px solid #d1d5db;
@@ -244,6 +261,7 @@
             text-align: center;
         }
 
+        /* ── Spinners / loading ── */
         .spinner {
             width: 28px;
             height: 28px;
@@ -261,21 +279,14 @@
         .viewer-loading { text-align: center; padding: 3rem 1rem; }
         .viewer-loading .spinner { width: 36px; height: 36px; }
         .viewer-loading p { margin-top: 1rem; font-size: 0.875rem; color: #6b7280; font-weight: 500; }
-
-        .search-bar-inner {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-        }
     </style>
 </head>
 <body>
-    <!-- Upload Section -->
+
+    <!-- ── Upload Section ─────────────────────────────────────────────────── -->
     <div id="uploadSection" class="upload-container">
         <div class="upload-card">
-            <h1>Upload PDF</h1>
+            <h1>PDF Viewer</h1>
             <p class="subtitle">Select a document to view and search</p>
             <form id="uploadForm">
                 <div class="file-drop-zone" id="dropZone">
@@ -292,26 +303,24 @@
                     </svg>
                     <span id="fileNameText"></span>
                 </div>
-                <button type="submit" class="btn-primary">Upload & View</button>
+                <button type="submit" class="btn-primary" id="uploadBtn">Open PDF</button>
             </form>
             <div id="uploadStatus" class="hidden" style="text-align:center; margin-top:1.25rem;">
                 <div class="spinner"></div>
-                <p class="upload-status-text">Processing PDF...</p>
+                <p class="upload-status-text">Loading PDF...</p>
             </div>
         </div>
     </div>
 
-    <!-- Viewer Section (hidden initially) -->
+    <!-- ── Viewer Section (hidden initially) ─────────────────────────────── -->
     <div id="viewerSection" class="hidden">
         <div id="search-bar">
             <div class="search-bar-inner">
-                <button id="back-to-upload" class="btn-back">
-                    <span style="margin-right:0.25rem;">&#8592;</span> New PDF
-                </button>
+                <button id="back-to-upload" class="btn-back">&#8592; New PDF</button>
                 <input
                     type="text"
                     id="search-input"
-                    placeholder="Search in document..."
+                    placeholder="Search in PDF..."
                     class="search-input"
                 />
                 <button id="prev-match" class="btn-search" disabled>&#8592; Prev</button>
@@ -320,8 +329,8 @@
                 <select id="zoom-select" class="zoom-select">
                     <option value="0.5">50%</option>
                     <option value="0.75">75%</option>
-                    <option value="1" selected>100%</option>
-                    <option value="1.5">150%</option>
+                    <option value="1">100%</option>
+                    <option value="1.5" selected>150%</option>
                     <option value="2">200%</option>
                 </select>
             </div>
@@ -336,12 +345,12 @@
         </div>
     </div>
 
-    <!-- File input UX -->
+    <!-- ── File input UX ──────────────────────────────────────────────────── -->
     <script>
-        const dropZone = document.getElementById('dropZone');
-        const pdfFileInput = document.getElementById('pdfFile');
+        const dropZone       = document.getElementById('dropZone');
+        const pdfFileInput   = document.getElementById('pdfFile');
         const fileNameDisplay = document.getElementById('fileNameDisplay');
-        const fileNameText = document.getElementById('fileNameText');
+        const fileNameText   = document.getElementById('fileNameText');
 
         pdfFileInput.addEventListener('change', () => {
             if (pdfFileInput.files.length > 0) {
@@ -352,16 +361,17 @@
             }
         });
 
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-        dropZone.addEventListener('drop', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop',      ()  => dropZone.classList.remove('dragover'));
     </script>
 
-    <script type="module">
+    <!-- ── PDF Viewer logic ───────────────────────────────────────────────── -->
+    <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc =
             'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        // ── DOM refs ──────────────────────────────────────────────────────────
+        // ── DOM refs ──────────────────────────────────────────────────────
         const uploadSection = document.getElementById('uploadSection');
         const viewerSection = document.getElementById('viewerSection');
         const uploadForm    = document.getElementById('uploadForm');
@@ -373,15 +383,255 @@
         const matchCounter  = document.getElementById('match-counter');
         const zoomSelect    = document.getElementById('zoom-select');
 
-        // ── Viewer state ──────────────────────────────────────────────────────
-        let pdfData              = null;
-        let documentId           = null;
-        let eventBus             = null;
-        let pdfViewer            = null;
-        let pdfDocument          = null;
-        let totalMatches         = 0;
-        let currentMatch         = 0;
-        let lastDispatchedQuery  = '';  // tracks the reconciled phrase, not the raw input
+        // ── Viewer state ──────────────────────────────────────────────────
+        let pdfData          = null;
+        let eventBus         = null;
+        let pdfLinkService   = null;
+        let pdfViewer        = null;
+        let pdfFindController = null;
+        let pdfDocument = null;
+        let pagesReady       = 0;
+        let documentId = null;
+        let currentMatchIndex = 0;
+        let matchResults = [];
+        let totalMatches      = 0;
+
+        // ── Upload ────────────────────────────────────────────────────────────
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const file = document.getElementById('pdfFile').files[0];
+            if (!file) { alert('Please select a PDF file'); return; }
+
+            uploadStatus.classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('pdf', file);
+
+            try {
+                const response = await fetch('/upload', { method: 'POST', body: formData });
+                if (!response.ok) throw new Error('Upload failed');
+
+                const responseData = await response.json();
+                documentId = responseData.id;
+
+                pdfData = await file.arrayBuffer();
+
+                uploadSection.classList.add('hidden');
+                viewerSection.classList.remove('hidden');
+                uploadStatus.classList.add('hidden');
+
+                initializeViewer();
+                await loadPDF();
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to upload PDF: ' + error.message);
+                uploadStatus.classList.add('hidden');
+            }
+        });
+
+        // ── Back button ───────────────────────────────────────────────────
+        backButton.addEventListener('click', () => {
+            // Tear down the viewer so a fresh one is created next time
+            if (pdfViewer) {
+                try { pdfViewer.setDocument(null); } catch (_) {}
+                pdfViewer = null;
+                pdfFindController = null;
+                pdfLinkService = null;
+                eventBus = null;
+            }
+
+            pagesReady = 0;
+            totalMatches = 0;
+            currentMatchIndex = 0;
+            pdfData = null;
+
+            // Clear viewer DOM
+            document.getElementById('viewer').innerHTML = '';
+            searchInput.value = '';
+            updateMatchCounter(0);
+
+            // Reset file input
+            uploadForm.reset();
+            fileNameDisplay.classList.remove('visible');
+
+            viewerSection.classList.add('hidden');
+            uploadSection.classList.remove('hidden');
+        });
+
+        // ── Initialize PDF.js viewer components ──────────────────────────
+        function initializeViewer() {
+            eventBus = new pdfjsViewer.EventBus();
+
+            pdfLinkService = new pdfjsViewer.PDFLinkService({ eventBus });
+
+            pdfViewer = new pdfjsViewer.PDFViewer({
+                container: document.getElementById('viewerContainer'),
+                viewer:    document.getElementById('viewer'),
+                eventBus,
+                linkService:    pdfLinkService,
+                textLayerMode:  1,   // 0=disable, 1=enable
+                removePageBorders: false,
+            });
+
+            pdfLinkService.setViewer(pdfViewer);
+            eventBus.on('pagerendered',       (e) => { pagesReady++; console.log(`Page ${e.pageNumber} rendered`); });
+            eventBus.on('textlayerrendered',  (e) => { console.log(`Text layer ${e.pageNumber} rendered`); });
+        }
+
+        // ── Load PDF from ArrayBuffer (from second file) ──────────────────
+        async function loadPDF() {
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+            pagesReady = 0;
+
+            try {
+                pdfFindController = new pdfjsViewer.PDFFindController({
+                    eventBus,
+                    linkService: pdfLinkService,
+                    pdfViewer,
+                });
+
+                // Must be set before loading the document
+                pdfViewer.findController = pdfFindController;
+
+                const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                pdfDocument = await loadingTask.promise;
+
+                pdfViewer.setDocument(pdfDocument);
+                pdfLinkService.setDocument(pdfDocument);
+                pdfFindController.setDocument(pdfDocument);
+
+                pdfViewer.currentScaleValue = '1.5';
+                loading.style.display = 'none';
+
+                console.log('PDF loaded, total pages:', pdfDocument.numPages);
+
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                loading.innerHTML = '<p style="color:#dc2626;font-family:Inter,sans-serif">Error loading PDF</p>';
+            }
+        }
+
+        // ── Search (from base HTML) ───────────────────────────────────────
+        let searchTimeout = null;
+
+        searchInput.addEventListener('input', (e) => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(async () => {
+            const query = e.target.value.trim();
+            if (!query) return;
+
+            const results = await getBackendResults(query);
+            if (!results || results.length === 0) return;
+
+            matchResults = results;
+            totalMatches = results.length;
+            currentMatchIndex = 0;
+
+            await fuzzySearch(matchResults);
+            updateMatchCounter(currentMatchIndex + 1);
+        }, 300);
+    });
+
+
+        async function getBackendResults(query) {
+            try {
+                const res = await fetch(
+                    `/api/search?q=${encodeURIComponent(query)}&id=${encodeURIComponent(documentId)}`
+                );
+                if (!res.ok) throw new Error('Search failed');
+                const results = await res.json();
+
+                console.log('[search] backend results:', results);
+
+                if (results.length === 0) {
+                    console.log('[search] no backend results, clearing highlights');
+                    return;
+                }
+                return results
+
+            } catch (err) {
+                console.error('Backend search error:', err);
+            }
+        }
+
+        async function fuzzySearch(results) {          
+            // Reconcile the backend snippet against PDF.js extracted text,
+            // then hand the reconciled phrase to PDFFindController
+            const reconciled = await reconcileMatch(results[currentMatchIndex]);
+            console.log('[search] backend snippet:', results[currentMatchIndex].text);
+            console.log('[search] reconciled phrase:', reconciled);
+
+            const phraseToFind = reconciled ?? results[currentMatchIndex].text;
+            console.log('[search] dispatching find for:', phraseToFind);
+            performSearch(phraseToFind, results);
+        }
+
+        function performSearch(query, results) {
+            // Scroll to the current backend match's page
+            pdfViewer.scrollPageIntoView({ pageNumber: results[currentMatchIndex].page });
+            eventBus.dispatch('find', {
+                type:        'find',
+                query,
+                caseSensitive: false,
+                entireWord:    false,
+                highlightAll:  true,
+                findPrevious:  false,
+            });
+        }
+
+        function updateMatchCounter(current) {
+            console.log("this is total: ", totalMatches);
+            if (totalMatches === 0) {
+                matchCounter.textContent = searchInput.value.trim() ? 'No matches' : '';
+                prevButton.disabled = true;
+                nextButton.disabled = true;
+            } else {
+                matchCounter.textContent = `${current} / ${totalMatches}`;
+                prevButton.disabled = current === 1;
+                nextButton.disabled = current === totalMatches;
+            }
+        }
+
+
+        prevButton.addEventListener('click', async () => {
+            if (!matchResults.length) return;
+            if (currentMatchIndex === 0) return;
+
+            currentMatchIndex--;
+            await fuzzySearch(matchResults);
+            updateMatchCounter(currentMatchIndex + 1);
+        });
+
+        nextButton.addEventListener('click', async () => {
+            if (!matchResults.length) return;
+            if (currentMatchIndex >= totalMatches - 1) return;
+
+            currentMatchIndex++;
+            await fuzzySearch(matchResults);
+            updateMatchCounter(currentMatchIndex + 1);
+        });
+
+
+        // searchInput.addEventListener('keydown', (e) => {
+        //     if (e.key === 'Enter') {
+        //         e.preventDefault();
+        //         if (e.shiftKey) prevButton.click(); else nextButton.click();
+        //     } else if (e.key === 'Escape') {
+        //         searchInput.value = '';
+        //         eventBus.dispatch('findbarclose');
+        //         updateMatchCounter(0);
+        //     }
+        // });
+
+        zoomSelect.addEventListener('change', (e) => {
+            pdfViewer.currentScaleValue = e.target.value;
+            if (pdfFindController && searchInput.value.trim()) {
+                setTimeout(() => performSearch(searchInput.value.trim()), 100);
+            }
+        });
 
         // ── Page text cache ───────────────────────────────────────────────────
         const pageTextCache = new Map();
@@ -453,252 +703,7 @@
             return bestScore >= 0.6 ? bestPhrase : null;
         }
 
-        // ── Upload ────────────────────────────────────────────────────────────
-        uploadForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const file = document.getElementById('pdfFile').files[0];
-            if (!file) { alert('Please select a PDF file'); return; }
-
-            uploadStatus.classList.remove('hidden');
-
-            const formData = new FormData();
-            formData.append('pdf', file);
-
-            try {
-                const response = await fetch('/upload', { method: 'POST', body: formData });
-                if (!response.ok) throw new Error('Upload failed');
-
-                const responseData = await response.json();
-                documentId = responseData.id;
-
-                pdfData = await file.arrayBuffer();
-
-                uploadSection.classList.add('hidden');
-                viewerSection.classList.remove('hidden');
-                uploadStatus.classList.add('hidden');
-
-                initializeViewer();
-                await loadPDF();
-
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Failed to upload PDF: ' + error.message);
-                uploadStatus.classList.add('hidden');
-            }
-        });
-
-        // ── Back button ───────────────────────────────────────────────────────
-        backButton.addEventListener('click', () => {
-            dispatchFind('');
-            pageTextCache.clear();
-
-            viewerSection.classList.add('hidden');
-            uploadSection.classList.remove('hidden');
-            uploadForm.reset();
-
-            pdfData              = null;
-            documentId           = null;
-            totalMatches         = 0;
-            currentMatch         = 0;
-            lastDispatchedQuery  = '';
-
-            if (pdfViewer) pdfViewer.cleanup();
-            pdfViewer   = null;
-            pdfDocument = null;
-            eventBus    = null;
-        });
-
-        // ── Viewer init ───────────────────────────────────────────────────────
-        function initializeViewer() {
-            eventBus = new pdfjsViewer.EventBus();
-
-            const pdfLinkService = new pdfjsViewer.PDFLinkService({ eventBus });
-
-            const pdfFindController = new pdfjsViewer.PDFFindController({
-                eventBus,
-                linkService: pdfLinkService,
-            });
-
-            pdfViewer = new pdfjsViewer.PDFViewer({
-                container: document.getElementById('viewerContainer'),
-                viewer: document.getElementById('viewer'),
-                eventBus,
-                linkService: pdfLinkService,
-                findController: pdfFindController,  // pass it HERE at construction
-                textLayerMode: 1,
-                removePageBorders: false,
-            });
-
-            pdfViewer.setDocument(pdfDocument);
-            pdfLinkService.setDocument(pdfDocument);
-            pdfFindController.setDocument(pdfDocument);
-
-
-            eventBus.on('updatefindmatchescount', ({ matchesCount }) => {
-                totalMatches = matchesCount.total;
-                currentMatch = matchesCount.current;
-                updateMatchCounter();
-            });
-
-            eventBus.on('updatefindcontrolstate', ({ state: findState, matchesCount }) => {
-                if (findState === 1 /* NOT_FOUND */) {
-                    totalMatches = 0;
-                    currentMatch = 0;
-                    updateMatchCounter();
-                } else if (matchesCount) {
-                    totalMatches = matchesCount.total;
-                    currentMatch = matchesCount.current;
-                    updateMatchCounter();
-                }
-            });
-
-            setupSearchControls();
-        }
-
-        async function loadPDF() {
-            const loading = document.getElementById('loading');
-            loading.style.display = 'block';
-
-            try {
-                const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-                pdfDocument = await loadingTask.promise;
-
-                pdfViewer.setDocument(pdfDocument);
-                eventBus.on('textlayerrendered', (e) => {
-                    console.log('[textlayer] rendered page:', e.pageNumber);
-                });
         
-                pdfViewer.currentScaleValue = '1';
-                loading.style.display = 'none';
-
-            } catch (error) {
-                console.error('Error loading PDF:', error);
-                loading.innerHTML = '<p style="color:#dc2626">Error loading PDF</p>';
-            }
-        }
-
-        // ── Find dispatch ─────────────────────────────────────────────────────
-        function dispatchFind(query, findPrevious = false, type = 'find') {
-            if (!eventBus) return;
-            if (type === 'find') lastDispatchedQuery = query;
-            eventBus.dispatch('find', {
-                query,
-                phraseSearch: true,
-                caseSensitive: false,
-                entireWord: false,
-                highlightAll: true,
-                findPrevious,
-                type,
-            });
-        }
-
-        function updateMatchCounter() {
-            if (!searchInput.value.trim()) {
-                matchCounter.textContent = '';
-                prevButton.disabled = true;
-                nextButton.disabled = true;
-                return;
-            }
-
-            if (totalMatches === 0) {
-                matchCounter.textContent = 'No matches';
-                prevButton.disabled = true;
-                nextButton.disabled = true;
-            } else {
-                matchCounter.textContent = `${currentMatch} / ${totalMatches}`;
-                prevButton.disabled = currentMatch <= 1;
-                nextButton.disabled = currentMatch >= totalMatches;
-            }
-        }
-
-        // ── Search controls ───────────────────────────────────────────────────
-        function setupSearchControls() {
-            let searchTimeout = null;
-
-            searchInput.addEventListener('input', (e) => {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(async () => {
-                    const query = e.target.value.trim();
-
-                    if (!query) {
-                        dispatchFind('');
-                        totalMatches = 0;
-                        currentMatch = 0;
-                        updateMatchCounter();
-                        return;
-                    }
-
-                    try {
-                        const res = await fetch(
-                            `/api/search?q=${encodeURIComponent(query)}&id=${encodeURIComponent(documentId)}`
-                        );
-                        if (!res.ok) throw new Error('Search failed');
-                        const results = await res.json();
-
-                        console.log('[search] backend results:', results);
-
-                        if (results.length === 0) {
-                            console.log('[search] no backend results, clearing highlights');
-                            dispatchFind('');
-                            totalMatches = 0;
-                            currentMatch = 0;
-                            updateMatchCounter();
-                            return;
-                        }
-
-                        // Scroll to the first backend match's page
-                        pdfViewer.scrollPageIntoView({ pageNumber: results[0].page });
-
-                        // Reconcile the backend snippet against PDF.js extracted text,
-                        // then hand the reconciled phrase to PDFFindController
-                        const reconciled = await reconcileMatch(results[0]);
-                        console.log('[search] backend snippet:', results[0].text);
-                        console.log('[search] reconciled phrase:', reconciled);
-
-                        const phraseToFind = reconciled ?? results[0].text;
-                        console.log('[search] dispatching find for:', phraseToFind);
-                        dispatchFind(phraseToFind);
-
-                    } catch (err) {
-                        console.error('Backend search error:', err);
-                    }
-
-                }, 300);
-            });
-
-            nextButton.addEventListener('click', () => {
-                if (!lastDispatchedQuery) return;
-                console.log('[nav] next, query:', lastDispatchedQuery);
-                dispatchFind(lastDispatchedQuery, false, 'again');
-            });
-
-            prevButton.addEventListener('click', () => {
-                if (!lastDispatchedQuery) return;
-                console.log('[nav] prev, query:', lastDispatchedQuery);
-                dispatchFind(lastDispatchedQuery, true, 'again');
-            });
-
-            searchInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (e.shiftKey) prevButton.click();
-                    else            nextButton.click();
-                } else if (e.key === 'Escape') {
-                    searchInput.value   = '';
-                    lastDispatchedQuery = '';
-                    dispatchFind('');
-                    totalMatches = 0;
-                    currentMatch = 0;
-                    updateMatchCounter();
-                }
-            });
-
-            zoomSelect.addEventListener('change', (e) => {
-                pdfViewer.currentScaleValue = e.target.value;
-                // PDFFindController redraws highlights automatically on re-render
-            });
-        }
     </script>
 </body>
 </html>
