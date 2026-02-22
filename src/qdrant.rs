@@ -4,31 +4,24 @@ use qdrant_client::qdrant::Distance;
 use qdrant_client::qdrant::SearchPointsBuilder;
 use qdrant_client::qdrant::SearchResponse;
 use qdrant_client::qdrant::UpsertPointsBuilder;
-use qdrant_client::qdrant::{CreateCollectionBuilder, VectorParamsBuilder, Filter, Condition};
+use qdrant_client::qdrant::{Condition, CreateCollectionBuilder, Filter, VectorParamsBuilder};
 use qdrant_client::qdrant::{PointStruct, Value};
 use std::collections::HashMap;
 
 use crate::embed;
 
-pub async fn setup_qdrant(
-) -> Result<Qdrant, QdrantError> {
+pub async fn setup_qdrant() -> Result<Qdrant, QdrantError> {
     let client = Qdrant::from_url("http://localhost:6334").build()?;
     client
-        .create_collection(
-            CreateCollectionBuilder::new("repl").vectors_config(VectorParamsBuilder::new(
-                embed::get_dim() as u64,
-                Distance::Dot,
-            )),
-        )
+        .create_collection(CreateCollectionBuilder::new("repl").vectors_config(
+            VectorParamsBuilder::new(embed::get_dim() as u64, Distance::Dot),
+        ))
         .await?;
 
     Ok(client)
 }
 
-pub async fn init_collection(
-    client: &Qdrant,
-    collection_name: &str,
-) -> Result<(), QdrantError> {
+pub async fn init_collection(client: &Qdrant, collection_name: &str) -> Result<(), QdrantError> {
     client
         .create_collection(
             CreateCollectionBuilder::new(collection_name).vectors_config(VectorParamsBuilder::new(
@@ -63,11 +56,7 @@ pub async fn store_embeddings(
             payload.insert("filename".to_string(), Value::from(unique_filename.clone()));
             payload.insert("text".to_string(), Value::from(chunk.content.clone()));
             payload.insert("page".to_string(), Value::from(chunk.page as f32));
-            PointStruct::new(
-                uuid::Uuid::new_v4().to_string(),
-                embedding,
-                payload,
-            )
+            PointStruct::new(uuid::Uuid::new_v4().to_string(), embedding, payload)
         })
         .collect();
 
@@ -92,10 +81,7 @@ pub async fn run_query(
         }
     };
 
-    let filename_filter = Filter::must([Condition::matches(
-        "filename",
-        filename.to_string(),
-    )]);
+    let filename_filter = Filter::must([Condition::matches("filename", filename.to_string())]);
 
     let search_result = client
         .search_points(

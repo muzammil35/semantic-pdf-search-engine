@@ -1,9 +1,9 @@
 use crate::extract::Page;
+use anyhow::Result;
 use lopdf::Document;
 use regex::Regex;
 use text_splitter::TextSplitter;
 use unicode_segmentation::UnicodeSegmentation;
-use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -421,11 +421,7 @@ fn is_garbage_sentence(s: &str) -> bool {
 }
 
 // Updated chunking function
-pub fn smart_chunk_text(
-    text: &str,
-    chunk_size: usize,
-    remove_headers: bool,
-) -> Vec<String> {
+pub fn smart_chunk_text(text: &str, chunk_size: usize, remove_headers: bool) -> Vec<String> {
     let cleaned = clean_pdf_text_robust(text, remove_headers);
     let sentences = split_into_sentences(&cleaned);
 

@@ -81,4 +81,3 @@ pub fn get_dim() -> usize {
     let model_info = EmbeddingModel::get_model_info(&EmbeddingModel::AllMiniLML6V2);
     model_info.expect("Model info should always exist").dim
 }
-

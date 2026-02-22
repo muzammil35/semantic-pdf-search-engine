@@ -27,15 +27,6 @@
         .textLayer { opacity: 0.2; }
         .textLayer ::selection { background: rgba(79, 70, 229, 0.3); }
 
-        .textLayer .highlight {
-            background-color: rgba(255, 237, 0, 0.4);
-            border-radius: 2px;
-        }
-        .textLayer .highlight.selected {
-            background-color: rgba(255, 140, 0, 0.6);
-            border-radius: 2px;
-        }
-
         /* ── Viewer layout ── */
         #viewerContainer {
             position: absolute;
@@ -347,10 +338,10 @@
 
     <!-- ── File input UX ──────────────────────────────────────────────────── -->
     <script>
-        const dropZone       = document.getElementById('dropZone');
-        const pdfFileInput   = document.getElementById('pdfFile');
+        const dropZone        = document.getElementById('dropZone');
+        const pdfFileInput    = document.getElementById('pdfFile');
         const fileNameDisplay = document.getElementById('fileNameDisplay');
-        const fileNameText   = document.getElementById('fileNameText');
+        const fileNameText    = document.getElementById('fileNameText');
 
         pdfFileInput.addEventListener('change', () => {
             if (pdfFileInput.files.length > 0) {
@@ -372,49 +363,44 @@
             'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         // ── DOM refs ──────────────────────────────────────────────────────
-        const uploadSection = document.getElementById('uploadSection');
-        const viewerSection = document.getElementById('viewerSection');
-        const uploadForm    = document.getElementById('uploadForm');
-        const uploadStatus  = document.getElementById('uploadStatus');
-        const backButton    = document.getElementById('back-to-upload');
-        const searchInput   = document.getElementById('search-input');
-        const prevButton    = document.getElementById('prev-match');
-        const nextButton    = document.getElementById('next-match');
-        const matchCounter  = document.getElementById('match-counter');
-        const zoomSelect    = document.getElementById('zoom-select');
+        const uploadSection  = document.getElementById('uploadSection');
+        const viewerSection  = document.getElementById('viewerSection');
+        const uploadForm     = document.getElementById('uploadForm');
+        const uploadStatus   = document.getElementById('uploadStatus');
+        const backButton     = document.getElementById('back-to-upload');
+        const searchInput    = document.getElementById('search-input');
+        const prevButton     = document.getElementById('prev-match');
+        const nextButton     = document.getElementById('next-match');
+        const matchCounter   = document.getElementById('match-counter');
+        const zoomSelect     = document.getElementById('zoom-select');
 
         // ── Viewer state ──────────────────────────────────────────────────
-        let pdfData          = null;
-        let eventBus         = null;
-        let pdfLinkService   = null;
-        let pdfViewer        = null;
-        let pdfFindController = null;
-        let pdfDocument = null;
-        let pagesReady       = 0;
-        let documentId = null;
-        let currentMatchIndex = 0;
-        let matchResults = [];
-        let totalMatches      = 0;
+        let pdfData                = null;
+        let eventBus               = null;
+        let pdfLinkService         = null;
+        let pdfViewer              = null;
+        let pdfDocument            = null;
+        let documentId             = null;
+        let currentMatchIndex      = 0;
+        let matchResults           = [];
+        let activeHighlights       = [];
+        let selectedHighlightIndex = -1;
 
-        // ── Upload ────────────────────────────────────────────────────────────
+        // ── Upload ────────────────────────────────────────────────────────
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-
             const file = document.getElementById('pdfFile').files[0];
             if (!file) { alert('Please select a PDF file'); return; }
 
             uploadStatus.classList.remove('hidden');
-
             const formData = new FormData();
             formData.append('pdf', file);
 
             try {
                 const response = await fetch('/upload', { method: 'POST', body: formData });
                 if (!response.ok) throw new Error('Upload failed');
-
                 const responseData = await response.json();
                 documentId = responseData.id;
-
                 pdfData = await file.arrayBuffer();
 
                 uploadSection.classList.add('hidden');
@@ -423,7 +409,6 @@
 
                 initializeViewer();
                 await loadPDF();
-
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to upload PDF: ' + error.message);
@@ -433,108 +418,210 @@
 
         // ── Back button ───────────────────────────────────────────────────
         backButton.addEventListener('click', () => {
-            // Tear down the viewer so a fresh one is created next time
             if (pdfViewer) {
                 try { pdfViewer.setDocument(null); } catch (_) {}
-                pdfViewer = null;
-                pdfFindController = null;
+                pdfViewer     = null;
                 pdfLinkService = null;
-                eventBus = null;
+                eventBus      = null;
             }
+            pdfData                = null;
+            documentId             = null;
+            matchResults           = [];
+            currentMatchIndex      = 0;
+            activeHighlights       = [];
+            selectedHighlightIndex = -1;
 
-            pagesReady = 0;
-            totalMatches = 0;
-            currentMatchIndex = 0;
-            pdfData = null;
-
-            // Clear viewer DOM
             document.getElementById('viewer').innerHTML = '';
             searchInput.value = '';
-            updateMatchCounter(0);
-
-            // Reset file input
+            updateMatchCounter();
             uploadForm.reset();
             fileNameDisplay.classList.remove('visible');
-
             viewerSection.classList.add('hidden');
             uploadSection.classList.remove('hidden');
         });
 
-        // ── Initialize PDF.js viewer components ──────────────────────────
+        // ── Initialize PDF.js ─────────────────────────────────────────────
         function initializeViewer() {
-            eventBus = new pdfjsViewer.EventBus();
-
+            eventBus       = new pdfjsViewer.EventBus();
             pdfLinkService = new pdfjsViewer.PDFLinkService({ eventBus });
 
             pdfViewer = new pdfjsViewer.PDFViewer({
-                container: document.getElementById('viewerContainer'),
-                viewer:    document.getElementById('viewer'),
+                container:         document.getElementById('viewerContainer'),
+                viewer:            document.getElementById('viewer'),
                 eventBus,
-                linkService:    pdfLinkService,
-                textLayerMode:  1,   // 0=disable, 1=enable
+                linkService:       pdfLinkService,
+                textLayerMode:     1,
                 removePageBorders: false,
             });
 
             pdfLinkService.setViewer(pdfViewer);
-            eventBus.on('pagerendered',       (e) => { pagesReady++; console.log(`Page ${e.pageNumber} rendered`); });
-            eventBus.on('textlayerrendered',  (e) => { console.log(`Text layer ${e.pageNumber} rendered`); });
         }
 
-        // ── Load PDF from ArrayBuffer (from second file) ──────────────────
+        // ── PDF Loading ───────────────────────────────────────────────────
         async function loadPDF() {
             const loading = document.getElementById('loading');
             loading.style.display = 'block';
-            pagesReady = 0;
-
             try {
-                pdfFindController = new pdfjsViewer.PDFFindController({
-                    eventBus,
-                    linkService: pdfLinkService,
-                    pdfViewer,
-                });
-
-                // Must be set before loading the document
-                pdfViewer.findController = pdfFindController;
-
                 const loadingTask = pdfjsLib.getDocument({ data: pdfData });
                 pdfDocument = await loadingTask.promise;
-
                 pdfViewer.setDocument(pdfDocument);
                 pdfLinkService.setDocument(pdfDocument);
-                pdfFindController.setDocument(pdfDocument);
-
                 pdfViewer.currentScaleValue = '1.5';
                 loading.style.display = 'none';
-
-                console.log('PDF loaded, total pages:', pdfDocument.numPages);
-
             } catch (error) {
                 console.error('Error loading PDF:', error);
                 loading.innerHTML = '<p style="color:#dc2626;font-family:Inter,sans-serif">Error loading PDF</p>';
             }
         }
 
-        // ── Search (from base HTML) ───────────────────────────────────────
+        // ── Highlight rendering ───────────────────────────────────────────
+
+        function clearAllHighlights() {
+            document.querySelectorAll('.bbox-highlight').forEach(el => el.remove());
+        }
+
+        // Convert pdfium coords (bottom-left origin) to PDF.js viewport coords (top-left origin)
+        function pdfiumRectsToViewport(rects, viewport) {
+            return rects.map(r => {
+                const [x1, y1] = viewport.convertToViewportPoint(r.x, r.y + r.height);
+                const [x2, y2] = viewport.convertToViewportPoint(r.x + r.width, r.y);
+                return {
+                    left:   Math.min(x1, x2),
+                    top:    Math.min(y1, y2),
+                    width:  Math.abs(x2 - x1),
+                    height: Math.abs(y2 - y1),
+                };
+            });
+        }
+
+        function mergeRectsOnSameLine(rects, tolerance = 3) {
+            if (!rects.length) return rects;
+            const sorted = [...rects].sort((a, b) =>
+                Math.abs(a.top - b.top) < tolerance ? a.left - b.left : a.top - b.top
+            );
+            const merged = [];
+            let current = { ...sorted[0] };
+            for (let i = 1; i < sorted.length; i++) {
+                const r          = sorted[i];
+                const sameLine   = Math.abs(r.top - current.top) < tolerance;
+                const closeEnough = r.left <= current.left + current.width + 6;
+                if (sameLine && closeEnough) {
+                    const right  = Math.max(current.left + current.width,  r.left + r.width);
+                    const bottom = Math.max(current.top  + current.height, r.top  + r.height);
+                    current.top    = Math.min(current.top,  r.top);
+                    current.left   = Math.min(current.left, r.left);
+                    current.width  = right  - current.left;
+                    current.height = bottom - current.top;
+                } else {
+                    merged.push(current);
+                    current = { ...r };
+                }
+            }
+            merged.push(current);
+            return merged;
+        }
+
+        function renderHighlight(highlight, index) {
+            const pageView = pdfViewer.getPageView(highlight.page - 1);
+            if (!pageView || !highlight.rects || !highlight.rects.length) return;
+
+            const isSelected    = index === selectedHighlightIndex;
+            const viewport      = pageView.viewport;
+            const viewportRects = pdfiumRectsToViewport(highlight.rects, viewport);
+            const cleanRects    = mergeRectsOnSameLine(viewportRects);
+
+            for (const rect of cleanRects) {
+                const el = document.createElement('div');
+                el.className     = 'bbox-highlight';
+                el.dataset.page  = highlight.page;
+                el.dataset.index = index;
+                el.style.cssText = `
+                    position:       absolute;
+                    left:           ${rect.left}px;
+                    top:            ${rect.top}px;
+                    width:          ${rect.width}px;
+                    height:         ${rect.height}px;
+                    background:     ${isSelected ? 'rgba(255, 140, 0, 0.45)' : 'rgba(255, 220, 0, 0.35)'};
+                    border-radius:  3px;
+                    pointer-events: none;
+                    mix-blend-mode: multiply;
+                `;
+                pageView.div.appendChild(el);
+            }
+        }
+
+        function applyHighlights(results) {
+            clearAllHighlights();
+            activeHighlights = results; // [{page, rects: [{x,y,width,height}]}]
+            results.forEach((h, i) => renderHighlight(h, i));
+        }
+
+        function scrollToMatch(index) {
+            const h = activeHighlights[index];
+            if (!h) return;
+            selectedHighlightIndex = index;
+            clearAllHighlights();
+            renderHighlight(h, index);
+
+            const pageView = pdfViewer.getPageView(h.page - 1);
+            const viewportHeight = pageView.viewport.height;
+
+            // Find the bounding box across all rects
+            const allRects = h.rects;
+            const minY = Math.min(...allRects.map(r => r.y));
+            const maxY = Math.max(...allRects.map(r => r.y + r.height));
+            const padding = 50; // PDF units above the highlight
+            const scrollToY = maxY + padding;
+
+            pdfViewer.scrollPageIntoView({
+                pageNumber: h.page,
+                destArray: [
+                    null,
+                    { name: 'XYZ' },
+                    null,
+                    scrollToY,
+                    null
+                ],
+            });
+        }
+
+        // ── Search flow ───────────────────────────────────────────────────
+
         let searchTimeout = null;
 
         searchInput.addEventListener('input', (e) => {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(async () => {
-            const query = e.target.value.trim();
-            if (!query) return;
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                const query = e.target.value.trim();
+                if (!query) {
+                    clearAllHighlights();
+                    activeHighlights  = [];
+                    matchResults      = [];
+                    updateMatchCounter();
+                    return;
+                }
 
-            const results = await getBackendResults(query);
-            if (!results || results.length === 0) return;
+                // Backend returns [{page, rects: [{x, y, width, height}]}]
+                const results = await getBackendResults(query);
+                if (!results || results.length === 0) {
+                    clearAllHighlights();
+                    updateMatchCounter();
+                    return;
+                }
 
-            matchResults = results;
-            totalMatches = results.length;
-            currentMatchIndex = 0;
+                console.log("results for this query: ", query);
+                console.log(results)
 
-            await fuzzySearch(matchResults);
-            updateMatchCounter(currentMatchIndex + 1);
-        }, 300);
-    });
+                matchResults           = results;
+                currentMatchIndex      = 0;
+                selectedHighlightIndex = 0;
 
+                //applyHighlights(results);
+                activeHighlights = results; 
+                scrollToMatch(0);
+                updateMatchCounter();
+            }, 300);
+        });
 
         async function getBackendResults(query) {
             try {
@@ -542,168 +629,48 @@
                     `/api/search?q=${encodeURIComponent(query)}&id=${encodeURIComponent(documentId)}`
                 );
                 if (!res.ok) throw new Error('Search failed');
-                const results = await res.json();
-
-                console.log('[search] backend results:', results);
-
-                if (results.length === 0) {
-                    console.log('[search] no backend results, clearing highlights');
-                    return;
-                }
-                return results
-
+                return await res.json();
             } catch (err) {
                 console.error('Backend search error:', err);
+                return null;
             }
         }
 
-        async function fuzzySearch(results) {          
-            // Reconcile the backend snippet against PDF.js extracted text,
-            // then hand the reconciled phrase to PDFFindController
-            const reconciled = await reconcileMatch(results[currentMatchIndex]);
-            console.log('[search] backend snippet:', results[currentMatchIndex].text);
-            console.log('[search] reconciled phrase:', reconciled);
+        // ── Navigation ────────────────────────────────────────────────────
 
-            const phraseToFind = reconciled ?? results[currentMatchIndex].text;
-            console.log('[search] dispatching find for:', phraseToFind);
-            performSearch(phraseToFind, results);
-        }
+        prevButton.addEventListener('click', () => {
+            if (!matchResults.length || currentMatchIndex === 0) return;
+            currentMatchIndex--;
+            scrollToMatch(currentMatchIndex);
+            updateMatchCounter();
+        });
 
-        function performSearch(query, results) {
-            // Scroll to the current backend match's page
-            pdfViewer.scrollPageIntoView({ pageNumber: results[currentMatchIndex].page });
-            eventBus.dispatch('find', {
-                type:        'find',
-                query,
-                caseSensitive: false,
-                entireWord:    false,
-                highlightAll:  true,
-                findPrevious:  false,
-            });
-        }
+        nextButton.addEventListener('click', () => {
+            if (!matchResults.length || currentMatchIndex >= matchResults.length - 1) return;
+            currentMatchIndex++;
+            scrollToMatch(currentMatchIndex);
+            updateMatchCounter();
+        });
 
-        function updateMatchCounter(current) {
-            console.log("this is total: ", totalMatches);
-            if (totalMatches === 0) {
+        function updateMatchCounter() {
+            const total = matchResults.length;
+            if (total === 0) {
                 matchCounter.textContent = searchInput.value.trim() ? 'No matches' : '';
                 prevButton.disabled = true;
                 nextButton.disabled = true;
             } else {
-                matchCounter.textContent = `${current} / ${totalMatches}`;
-                prevButton.disabled = current === 1;
-                nextButton.disabled = current === totalMatches;
+                matchCounter.textContent = `${currentMatchIndex + 1} / ${total}`;
+                prevButton.disabled = currentMatchIndex === 0;
+                nextButton.disabled = currentMatchIndex === total - 1;
             }
         }
 
-
-        prevButton.addEventListener('click', async () => {
-            if (!matchResults.length) return;
-            if (currentMatchIndex === 0) return;
-
-            currentMatchIndex--;
-            await fuzzySearch(matchResults);
-            updateMatchCounter(currentMatchIndex + 1);
-        });
-
-        nextButton.addEventListener('click', async () => {
-            if (!matchResults.length) return;
-            if (currentMatchIndex >= totalMatches - 1) return;
-
-            currentMatchIndex++;
-            await fuzzySearch(matchResults);
-            updateMatchCounter(currentMatchIndex + 1);
-        });
-
-
-        // searchInput.addEventListener('keydown', (e) => {
-        //     if (e.key === 'Enter') {
-        //         e.preventDefault();
-        //         if (e.shiftKey) prevButton.click(); else nextButton.click();
-        //     } else if (e.key === 'Escape') {
-        //         searchInput.value = '';
-        //         eventBus.dispatch('findbarclose');
-        //         updateMatchCounter(0);
-        //     }
-        // });
+        // ── Zoom ──────────────────────────────────────────────────────────
 
         zoomSelect.addEventListener('change', (e) => {
             pdfViewer.currentScaleValue = e.target.value;
-            if (pdfFindController && searchInput.value.trim()) {
-                setTimeout(() => performSearch(searchInput.value.trim()), 100);
-            }
         });
-
-        // ── Page text cache ───────────────────────────────────────────────────
-        const pageTextCache = new Map();
-
-        // ── Text reconciliation helpers ───────────────────────────────────────
-
-        async function getPdfJsPageText(pageNumber) {
-            if (pageTextCache.has(pageNumber)) return pageTextCache.get(pageNumber);
-
-            const page = await pdfDocument.getPage(pageNumber);
-            const content = await page.getTextContent();
-            const text = content.items
-                .map(item => item.str + (item.hasEOL ? '\n' : ''))
-                .join('');
-
-            pageTextCache.set(pageNumber, text);
-            return text;
-        }
-
-        // Levenshtein-based similarity ratio, returns 0–1
-        function similarity(a, b) {
-            const longer  = a.length > b.length ? a : b;
-            const shorter = a.length > b.length ? b : a;
-            if (longer.length === 0) return 1.0;
-
-            const costs = Array.from({ length: shorter.length + 1 }, (_, i) => i);
-            for (let i = 1; i <= longer.length; i++) {
-                let prev = i;
-                for (let j = 1; j <= shorter.length; j++) {
-                    const cost = longer[i - 1] === shorter[j - 1] ? 0 : 1;
-                    const next = Math.min(prev + 1, costs[j] + 1, costs[j - 1] + cost);
-                    costs[j - 1] = prev;
-                    prev = next;
-                }
-                costs[shorter.length] = prev;
-            }
-
-            return (longer.length - costs[shorter.length]) / longer.length;
-        }
-
-        // Slide a 4-word window across the PDF.js page text, find the window
-        // that best matches the first 4 words of the backend snippet.
-        // Returns the best-matching phrase, or null if below threshold.
-        async function reconcileMatch(match) {
-            const { page, text: backendText } = match;
-            const pdfJsText = await getPdfJsPageText(page);
-
-            const first4Words = backendText.trim().split(/\s+/).slice(0, 4).join(' ');
-            const pageWords   = pdfJsText.trim().split(/\s+/);
-
-            console.log('[reconcile] backend first 4 words:', first4Words);
-            console.log('[reconcile] pdfjs page word count:', pageWords.length);
-
-            let bestScore  = 0;
-            let bestPhrase = null;
-
-            for (let i = 0; i <= pageWords.length - 4; i++) {
-                const candidate = pageWords.slice(i, i + 4).join(' ');
-                const score = similarity(first4Words.toLowerCase(), candidate.toLowerCase());
-                if (score > bestScore) {
-                    bestScore  = score;
-                    bestPhrase = candidate;
-                }
-            }
-
-            console.log('[reconcile] best match:', bestPhrase, '| score:', bestScore.toFixed(3));
-
-            // Threshold of 0.6 works well for most prose; lower if getting misses
-            return bestScore >= 0.6 ? bestPhrase : null;
-        }
-
-        
     </script>
+
 </body>
 </html>

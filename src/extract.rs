@@ -49,9 +49,7 @@ pub fn extract_pdf_file(pdf_path: &str) -> File {
         })
         .collect();
 
-    File {
-        pages
-    }
+    File { pages }
 }
 
 pub fn extract_text(file: &str) -> File {
@@ -80,9 +78,7 @@ pub fn extract_text(file: &str) -> File {
         })
         .collect();
 
-    File {
-        pages: pages,
-    }
+    File { pages: pages }
 }
 
 impl File {

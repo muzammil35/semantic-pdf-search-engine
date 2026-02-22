@@ -150,10 +150,7 @@ async fn process_file(file_path: &str) -> Result<(), Box<dyn std::error::Error>>
 }
 
 // REPL version of search (prints to console)
-async fn run_search_repl(
-    file_name: &str,
-    query: String,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_search_repl(file_name: &str, query: String) -> Result<(), Box<dyn std::error::Error>> {
     let query = query.trim();
     if query.is_empty() {
         println!("No query entered.");
@@ -181,7 +178,7 @@ async fn run_search_repl(
 
 // API version of search (returns JSON)
 async fn run_search_api(
-     file_name: &str,
+    file_name: &str,
     query: String,
 ) -> Result<Vec<SearchResult>, Box<dyn std::error::Error>> {
     let query = query.trim();
