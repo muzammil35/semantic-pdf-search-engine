@@ -1,7 +1,7 @@
 # Prerequisites
 - Docker
 - Rust
-- Pdfium Binary (https://github.com/paulocoutinhox/pdfium-lib/releases)
+- Pdfium Binary (https://github.com/paulocoutinhox/pdfium-lib/releases) in working directory
 
   
 
