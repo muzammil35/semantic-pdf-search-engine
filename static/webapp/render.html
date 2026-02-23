@@ -320,8 +320,8 @@
                 <select id="zoom-select" class="zoom-select">
                     <option value="0.5">50%</option>
                     <option value="0.75">75%</option>
-                    <option value="1">100%</option>
-                    <option value="1.5" selected>150%</option>
+                    <option value="1" seelected>100%</option>
+                    <option value="1.5">150%</option>
                     <option value="2">200%</option>
                 </select>
             </div>
@@ -466,7 +466,7 @@
                 pdfDocument = await loadingTask.promise;
                 pdfViewer.setDocument(pdfDocument);
                 pdfLinkService.setDocument(pdfDocument);
-                pdfViewer.currentScaleValue = '1.5';
+                pdfViewer.currentScaleValue = '1';
                 loading.style.display = 'none';
             } catch (error) {
                 console.error('Error loading PDF:', error);

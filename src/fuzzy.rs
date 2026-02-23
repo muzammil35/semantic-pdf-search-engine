@@ -201,7 +201,10 @@ mod tests {
         let haystack = char_entries("infor-\nmation");
         let needle = chars("information");
         let results = fuzzy_search(&haystack, &needle, 0.75);
-        assert!(!results.is_empty(), "hyphenated word should fuzzy-match clean needle");
+        assert!(
+            !results.is_empty(),
+            "hyphenated word should fuzzy-match clean needle"
+        );
     }
 
     #[test]
@@ -219,7 +222,10 @@ mod tests {
         let haystack = char_entries("a self-\ncontained system");
         let needle = chars("self-contained");
         let results = fuzzy_search(&haystack, &needle, 0.75);
-        assert!(!results.is_empty(), "soft-hyphen line break should still match");
+        assert!(
+            !results.is_empty(),
+            "soft-hyphen line break should still match"
+        );
     }
 
     #[test]
@@ -228,7 +234,10 @@ mod tests {
         let haystack = char_entries("compre\u{00AD}hensive");
         let needle = chars("comprehensive");
         let results = fuzzy_search(&haystack, &needle, 0.75);
-        assert!(!results.is_empty(), "soft hyphen mid-word should still fuzzy-match");
+        assert!(
+            !results.is_empty(),
+            "soft hyphen mid-word should still fuzzy-match"
+        );
     }
 
     #[test]
@@ -237,7 +246,10 @@ mod tests {
         let haystack = char_entries("the  result.  The  value  is  correct");
         let needle = chars("result. The value");
         let results = fuzzy_search(&haystack, &needle, 0.75);
-        assert!(!results.is_empty(), "double-spaced text should fuzzy-match clean needle");
+        assert!(
+            !results.is_empty(),
+            "double-spaced text should fuzzy-match clean needle"
+        );
     }
 
     #[test]
@@ -246,7 +258,10 @@ mod tests {
         let haystack = char_entries("wordswithoutspaces");
         let needle = chars("without");
         let results = fuzzy_search(&haystack, &needle, 0.99);
-        assert!(!results.is_empty(), "substring without spaces should still exact-match");
+        assert!(
+            !results.is_empty(),
+            "substring without spaces should still exact-match"
+        );
     }
 
     #[test]
@@ -255,7 +270,10 @@ mod tests {
         let haystack = char_entries("\u{201C}quoted text\u{201D}");
         let needle = chars("\"quoted text\"");
         let results = fuzzy_search(&haystack, &needle, 0.75);
-        assert!(!results.is_empty(), "curly quotes should fuzzy-match straight quotes");
+        assert!(
+            !results.is_empty(),
+            "curly quotes should fuzzy-match straight quotes"
+        );
     }
 
     #[test]
@@ -266,6 +284,4 @@ mod tests {
         let results = fuzzy_search(&haystack, &needle, 0.75);
         assert!(!results.is_empty(), "em-dash should fuzzy-match hyphen");
     }
-
 }
-

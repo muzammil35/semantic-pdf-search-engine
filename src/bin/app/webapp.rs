@@ -20,10 +20,14 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 use uuid::Uuid;
+use pdfium_render::prelude::*;
 use vb::chunk;
 use vb::embed;
 use vb::fuzzy;
 use vb::qdrant;
+
+// --- Pdfium singleton: initialized once, reused across requests ---
+static PDFIUM: OnceLock<Pdfium> = OnceLock::new();
 
 // Shared state for ID to filename mapping
 type IdToFilenameMap = Arc<RwLock<HashMap<String, String>>>;
@@ -39,21 +43,6 @@ struct SearchResult {
 #[derive(Serialize)]
 struct UploadResponse {
     id: String,
-}
-
-// Query parameter structure for /api/search
-#[derive(Deserialize)]
-struct SearchQuery {
-    q: String,
-    id: String,
-}
-
-#[derive(Deserialize)]
-struct BoundingQuery {
-    id: String,
-    page: u16,
-    start: usize,
-    end: usize,
 }
 
 #[derive(Clone)]
@@ -83,9 +72,8 @@ async fn main() {
         .route("/", get(index))
         .route("/upload", post(handle_upload))
         .route("/api/search", get(search_with_bboxes))
-        .route("/api/bboxes", post(get_bboxes))
         .nest_service("/static", ServeDir::new("static"))
-        .layer(DefaultBodyLimit::max(100 * 1024 * 1024)) // 10MB
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024)) 
         .with_state(shared_state.clone());
 
     // Run the server
@@ -182,44 +170,6 @@ async fn process_file(filename: &str, pdf_data: Bytes, client: Arc<Qdrant>) -> R
     Ok(unique_filename)
 }
 
-async fn search_handler(
-    State(state): State<AppState>,
-    Query(params): Query<SearchQuery>,
-) -> Result<Json<Vec<SearchResult>>, (StatusCode, String)> {
-    let id_map = state.id_map.clone();
-    let qdrant = state.qdrant.clone();
-    let query = params.q.trim();
-    let id = params.id.trim();
-
-    if query.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Query parameter 'q' cannot be empty".to_string(),
-        ));
-    }
-
-    if id.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Query parameter 'id' cannot be empty".to_string(),
-        ));
-    }
-    let file_name = {
-        let map = id_map.read().await;
-        map.get(id)
-            .ok_or_else(|| (StatusCode::NOT_FOUND, format!("ID '{}' not found", id)))?
-            .clone()
-    };
-
-    match run_search_api(&qdrant, &file_name, query.to_string()).await {
-        Ok(results) => Ok(Json(results)),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Search failed: {}", e),
-        )),
-    }
-}
-
 // API version of search (returns JSON)
 async fn run_search_api(
     client: &Qdrant,
@@ -261,7 +211,6 @@ async fn run_search_api(
     Ok(results)
 }
 
-use pdfium_render::prelude::*;
 
 #[derive(Deserialize)]
 pub struct BboxRequest {
@@ -284,113 +233,6 @@ pub struct BboxResponse {
     pub rects: Vec<CharBbox>,
 }
 
-async fn get_bboxes(
-    State(state): State<AppState>, // your existing Arc<Mutex<HashMap<String, Vec<u8>>>>
-    Json(req): Json<BoundingQuery>,
-) -> Json<BboxResponse> {
-    let id = req.id.trim();
-    let bytes = {
-        let store = state.bytes_map.read().await;
-        store.get(id).cloned()
-    };
-
-    let Some(bytes) = bytes else {
-        return Json(BboxResponse { rects: vec![] });
-    };
-
-    let rects =
-        extract_char_bboxes_(&bytes, req.page as usize, req.start, req.end).unwrap_or_default();
-
-    Json(BboxResponse { rects })
-}
-
-fn extract_char_bboxes_(
-    bytes: &[u8],
-    page_number: usize, // 1-indexed
-    start: usize,
-    end: usize,
-) -> anyhow::Result<Vec<CharBbox>> {
-    let pdfium = Pdfium::new(
-        Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))
-            .or_else(|_| Pdfium::bind_to_system_library())
-            .unwrap(),
-    );
-    let doc = pdfium.load_pdf_from_byte_slice(bytes, None)?;
-    let page = doc.pages().get((page_number - 1) as u16)?;
-    let text = page.text()?;
-    let chars = text.chars();
-
-    let excerpt: String = chars
-        .iter()
-        .skip(start)
-        .take(end - start)
-        .filter_map(|c| c.unicode_char())
-        .collect();
-
-    println!("{}", excerpt);
-    // Group consecutive chars into line-level rects to avoid returning
-    // hundreds of tiny single-character boxes
-    let mut result: Vec<CharBbox> = Vec::new();
-    let mut current: Option<CharBbox> = None;
-
-    for idx in start..end.min(chars.len()) {
-        let ch = match chars.get(idx) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        // Skip whitespace — it has no meaningful bbox
-        if ch.unicode_char().map(|c| c.is_whitespace()).unwrap_or(true) {
-            if let Some(r) = current.take() {
-                result.push(r);
-            }
-            continue;
-        }
-
-        let b = ch.loose_bounds()?;
-        let x = b.left().value;
-        let y = b.bottom().value;
-        let width = (b.right() - b.left()).value;
-        let height = (b.top() - b.bottom()).value;
-
-        match current {
-            Some(ref mut cur) => {
-                // Same line if Y origins are close
-                if (cur.y - y).abs() < 2.0 {
-                    cur.width = (x + width) - cur.x;
-                    cur.height = cur.height.max(height);
-                } else {
-                    result.push(current.take().unwrap());
-                    current = Some(CharBbox {
-                        x,
-                        y,
-                        width,
-                        height,
-                    });
-                }
-            }
-            None => {
-                current = Some(CharBbox {
-                    x,
-                    y,
-                    width,
-                    height,
-                });
-            }
-        }
-    }
-
-    if let Some(r) = current {
-        result.push(r);
-    }
-
-    Ok(result)
-}
-
-use pdfium_render::prelude::*;
-
-// --- Pdfium singleton: initialized once, reused across requests ---
-static PDFIUM: OnceLock<Pdfium> = OnceLock::new();
 
 fn get_pdfium() -> &'static Pdfium {
     PDFIUM.get_or_init(|| {
@@ -433,8 +275,7 @@ async fn search_with_bboxes(
     };
 
     // 2. Use search_handler's underlying logic to get semantic search results
-    let search_results = match run_search_api(&state.qdrant, &file_name, params.q.clone()).await
-    {
+    let search_results = match run_search_api(&state.qdrant, &file_name, params.q.clone()).await {
         Ok(results) => results,
         Err(_) => return Json(vec![]),
     };
@@ -451,11 +292,6 @@ async fn search_with_bboxes(
     let Some(bytes) = bytes else {
         return Json(vec![]);
     };
-
-    let needle_chars: Vec<char> = needle
-        .chars()
-        .map(|c| c.to_lowercase().next().unwrap_or(c))
-        .collect();
 
     let pdfium = get_pdfium();
     let doc = match pdfium.load_pdf_from_byte_slice(&bytes, None) {
@@ -519,7 +355,7 @@ async fn search_with_bboxes(
             })
             .collect();
 
-        for (entry_start, entry_end, _score) in snapped_matches{
+        for (entry_start, entry_end, _score) in snapped_matches {
             // Print the fuzzy-matched string from the PDF
             let fuzzy_str: String = char_entries[entry_start..entry_end]
                 .iter()
