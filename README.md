@@ -45,7 +45,7 @@ Frontend Highlighting (pdf.js)
 
 ### Key Components
 
-- **Text Extraction**: Extracts structured text and positional data using pdfium-render  
+- **Text Extraction**: Extracts structured text and positional data 
 - **Embedding Pipeline**: Converts text chunks into vector representations  
 - **Vector Search**: Stores and retrieves embeddings via Qdrant using similarity metrics  
 - **Fuzzy Matching**: Improves recall by matching approximate text spans  
@@ -149,7 +149,8 @@ serve <filename.pdf>   # Render PDF in browser
 
 ## Future Improvements
 
-- REST API layer for external integrations  
+- REST API layer for external integrations
+- Hybrid Keyword + Semantic search retrieval functionality for more rich query matches  
 - Support for multiple embedding models  
 - Pagination and multi-document indexing  
 - Query latency benchmarking  
