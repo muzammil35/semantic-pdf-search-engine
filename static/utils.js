@@ -1,150 +1,209 @@
-// ---- Search + highlight state ----
-export const state = {
-  currentMatchIndex: 0,
-  backendMatches: [],
-  pagesReady: 0,
-  currentSearchQuery: '',
-  lastScrolledMatch: null,
-};
+// ── File input UX ────────────────────────────────────────────────────────────
 
+export function initDropZone() {
+    const dropZone        = document.getElementById('dropZone');
+    const pdfFileInput    = document.getElementById('pdfFile');
+    const fileNameDisplay = document.getElementById('fileNameDisplay');
+    const fileNameText    = document.getElementById('fileNameText');
 
-// ---- Backend search ----
-export async function performSearch(query, pdfViewer, updateMatchCounter) {
-  state.currentSearchQuery = query;
+    pdfFileInput.addEventListener('change', () => {
+        if (pdfFileInput.files.length > 0) {
+            fileNameText.textContent = pdfFileInput.files[0].name;
+            fileNameDisplay.classList.add('visible');
+        } else {
+            fileNameDisplay.classList.remove('visible');
+        }
+    });
 
-  try {
-    const response = await fetch(
-      `/api/search?q=${encodeURIComponent(query)}`
-    );
-    if (!response.ok) throw new Error('Search request failed');
+    dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop',      ()  => dropZone.classList.remove('dragover'));
+}
 
-    const results = await response.json();
-    state.backendMatches = results.slice(0, 5);
-    state.currentMatchIndex = 0;
- 
-    if (state.backendMatches.length === 0) {
-      updateMatchCounter(0, 0);
-      clearHighlights();
-      return;
+// ── Viewer initialisation ─────────────────────────────────────────────────────
+
+/**
+ * Creates and returns a fresh { eventBus, pdfLinkService, pdfViewer } set.
+ */
+export function initializeViewer() {
+    const eventBus       = new pdfjsViewer.EventBus();
+    const pdfLinkService = new pdfjsViewer.PDFLinkService({ eventBus });
+
+    const pdfViewer = new pdfjsViewer.PDFViewer({
+        container:         document.getElementById('viewerContainer'),
+        viewer:            document.getElementById('viewer'),
+        eventBus,
+        linkService:       pdfLinkService,
+        textLayerMode:     1,
+        removePageBorders: false,
+    });
+
+    pdfLinkService.setViewer(pdfViewer);
+    return { eventBus, pdfLinkService, pdfViewer };
+}
+
+// ── PDF loading ───────────────────────────────────────────────────────────────
+
+/**
+ * Loads the given ArrayBuffer into the provided pdfViewer instance.
+ * Returns the resolved PDFDocumentProxy.
+ */
+export async function loadPDF(pdfData, pdfViewer, pdfLinkService) {
+    const loading = document.getElementById('loading');
+    loading.style.display = 'block';
+    try {
+        const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+        const pdfDocument = await loadingTask.promise;
+        pdfViewer.setDocument(pdfDocument);
+        pdfLinkService.setDocument(pdfDocument);
+        pdfViewer.currentScaleValue = '1';
+        loading.style.display = 'none';
+        return pdfDocument;
+    } catch (error) {
+        console.error('Error loading PDF:', error);
+        loading.innerHTML = '<p style="color:#dc2626;font-family:Inter,sans-serif">Error loading PDF</p>';
+        return null;
     }
-
-    highlightCurrentBackendMatch(pdfViewer, updateMatchCounter);
-  } catch (err) {
-    console.error('Backend search error:', err);
-    updateMatchCounter(0, 0);
-  }
 }
 
-export async function performSearchWithId(query, Id,  pdfViewer, updateMatchCounter) {
-  state.currentSearchQuery = query;
+// ── Highlight helpers ─────────────────────────────────────────────────────────
 
-  try {
-    const response = await fetch(
-      `/api/search?q=${encodeURIComponent(query)}&id=${encodeURIComponent(Id)}`
+export function clearAllHighlights() {
+    document.querySelectorAll('.bbox-highlight').forEach(el => el.remove());
+}
+
+/**
+ * Converts pdfium coords (bottom-left origin) to PDF.js viewport coords (top-left origin).
+ */
+export function pdfiumRectsToViewport(rects, viewport) {
+    return rects.map(r => {
+        const [x1, y1] = viewport.convertToViewportPoint(r.x, r.y + r.height);
+        const [x2, y2] = viewport.convertToViewportPoint(r.x + r.width, r.y);
+        return {
+            left:   Math.min(x1, x2),
+            top:    Math.min(y1, y2),
+            width:  Math.abs(x2 - x1),
+            height: Math.abs(y2 - y1),
+        };
+    });
+}
+
+export function mergeRectsOnSameLine(rects, tolerance = 3) {
+    if (!rects.length) return rects;
+    const sorted = [...rects].sort((a, b) =>
+        Math.abs(a.top - b.top) < tolerance ? a.left - b.left : a.top - b.top
     );
-    if (!response.ok) throw new Error('Search request failed');
-
-    const results = await response.json();
-    state.backendMatches = results.slice(0, 5);
-    state.currentMatchIndex = 0;
-
-    console.log(state.backendMatches);
-
-    if (state.backendMatches.length === 0) {
-      updateMatchCounter(0, 0);
-      clearHighlights();
-      return;
+    const merged = [];
+    let current = { ...sorted[0] };
+    for (let i = 1; i < sorted.length; i++) {
+        const r           = sorted[i];
+        const sameLine    = Math.abs(r.top - current.top) < tolerance;
+        const closeEnough = r.left <= current.left + current.width + 6;
+        if (sameLine && closeEnough) {
+            const right  = Math.max(current.left + current.width,  r.left + r.width);
+            const bottom = Math.max(current.top  + current.height, r.top  + r.height);
+            current.top    = Math.min(current.top,  r.top);
+            current.left   = Math.min(current.left, r.left);
+            current.width  = right  - current.left;
+            current.height = bottom - current.top;
+        } else {
+            merged.push(current);
+            current = { ...r };
+        }
     }
-
-    highlightCurrentBackendMatch(pdfViewer, updateMatchCounter);
-  } catch (err) {
-    console.error('Backend search error:', err);
-    updateMatchCounter(0, 0);
-  }
+    merged.push(current);
+    return merged;
 }
 
-export function highlightCurrentBackendMatch(pdfViewer, updateMatchCounter) {
-  if (state.backendMatches.length === 0) return;
+/**
+ * @param {object}  highlight            - { page, rects }
+ * @param {number}  index                - position in matchResults array
+ * @param {number}  selectedHighlightIndex
+ * @param {object}  pdfViewer
+ */
+export function renderHighlight(highlight, index, selectedHighlightIndex, pdfViewer) {
+    const pageView = pdfViewer.getPageView(highlight.page - 1);
+    if (!pageView || !highlight.rects || !highlight.rects.length) return;
 
-  const match = state.backendMatches[state.currentMatchIndex];
+    const isSelected    = index === selectedHighlightIndex;
+    const viewport      = pageView.viewport;
+    const viewportRects = pdfiumRectsToViewport(highlight.rects, viewport);
+    const cleanRects    = mergeRectsOnSameLine(viewportRects);
 
-  pdfViewer.scrollPageIntoView({ pageNumber: match.page });
-
-  const words = match.text.trim().split(/\s+/);
-  const first3 = words.slice(0, 3).join(' ');
-
-  setTimeout(() => {
-    highlightMatchManually(match.page, first3);
-  }, 200);
-
-  updateMatchCounter(
-    state.currentMatchIndex + 1,
-    state.backendMatches.length
-  );
-}
-
-// ---- Highlighting ----
-
-export function highlightMatchManually(pageNumber, searchText) {
-  const pageDiv = document.querySelector(
-    `[data-page-number="${pageNumber}"]`
-  );
-  if (!pageDiv) return;
-
-  const textLayer = pageDiv.querySelector('.textLayer');
-  if (!textLayer) return;
-
-  clearHighlights(textLayer);
-
-  const spans = Array.from(textLayer.querySelectorAll('span'));
-
-  let fullText = '';
-  const spanMap = [];
-
-  spans.forEach((span, index) => {
-    const text = span.textContent;
-    for (let i = 0; i < text.length; i++) {
-      spanMap.push(index);
+    for (const rect of cleanRects) {
+        const el = document.createElement('div');
+        el.className     = 'bbox-highlight';
+        el.dataset.page  = highlight.page;
+        el.dataset.index = index;
+        el.style.cssText = `
+            position:       absolute;
+            left:           ${rect.left}px;
+            top:            ${rect.top}px;
+            width:          ${rect.width}px;
+            height:         ${rect.height}px;
+            background:     ${isSelected ? 'rgba(255, 140, 0, 0.45)' : 'rgba(255, 220, 0, 0.35)'};
+            border-radius:  3px;
+            pointer-events: none;
+            mix-blend-mode: multiply;
+        `;
+        pageView.div.appendChild(el);
     }
-    fullText += text;
-  });
-
-  const idx = fullText
-    .toLowerCase()
-    .indexOf(searchText.toLowerCase());
-
-  if (idx === -1) return;
-
-  const highlightEnd = Math.min(idx + 500, fullText.length);
-  const spansToHighlight = new Set();
-
-  for (let i = idx; i < highlightEnd; i++) {
-    spansToHighlight.add(spanMap[i]);
-  }
-
-  spansToHighlight.forEach(i => {
-    spans[i].classList.add('backend-highlight');
-  });
-
-  const first = spans[[...spansToHighlight][0]];
-  if (first) {
-    setTimeout(() => {
-      scrollIntoViewIfNotVisible(first);
-    }, 100);
-  }
 }
 
-export function clearHighlights(root = document) {
-  root
-    .querySelectorAll('.backend-highlight, .post-match-highlight')
-    .forEach(el =>
-      el.classList.remove('backend-highlight', 'post-match-highlight')
-    );
+export function applyHighlights(results, pdfViewer) {
+    clearAllHighlights();
+    results.forEach((h, i) => renderHighlight(h, i, -1, pdfViewer));
 }
 
-// ---- Scrolling ----
+/**
+ * Scrolls to and highlights the match at the given index.
+ * Returns the updated selectedHighlightIndex (same as index).
+ */
+export function scrollToMatch(index, activeHighlights, pdfViewer) {
+    const h = activeHighlights[index];
+    if (!h) return index;
 
-export function scrollIntoViewIfNotVisible(el) {
-    el.scrollIntoView({ block: 'center', behavior: 'instant' });
-    state.lastScrolledMatch = el;
+    clearAllHighlights();
+    renderHighlight(h, index, index, pdfViewer);
+
+    const allRects = h.rects;
+    const maxY     = Math.max(...allRects.map(r => r.y + r.height));
+    const padding  = 50;
+
+    pdfViewer.scrollPageIntoView({
+        pageNumber: h.page,
+        destArray:  [null, { name: 'XYZ' }, null, maxY + padding, null],
+    });
+
+    return index; // new selectedHighlightIndex
+}
+
+// ── Match counter UI ──────────────────────────────────────────────────────────
+
+export function updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter) {
+    const total = matchResults.length;
+    if (total === 0) {
+        matchCounter.textContent = searchInput.value.trim() ? 'No matches' : '';
+        prevButton.disabled = true;
+        nextButton.disabled = true;
+    } else {
+        matchCounter.textContent = `${currentMatchIndex + 1} / ${total}`;
+        prevButton.disabled = currentMatchIndex === 0;
+        nextButton.disabled = currentMatchIndex === total - 1;
+    }
+}
+
+// ── Backend search ────────────────────────────────────────────────────────────
+
+export async function getBackendResults(query, documentId) {
+    try {
+        const res = await fetch(
+            `/api/search?q=${encodeURIComponent(query)}&id=${encodeURIComponent(documentId)}`
+        );
+        if (!res.ok) throw new Error('Search failed');
+        return await res.json();
+    } catch (err) {
+        console.error('Backend search error:', err);
+        return null;
+    }
 }

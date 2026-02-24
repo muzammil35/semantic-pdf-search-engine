@@ -11,266 +11,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <style>
-        *, *::before, *::after { box-sizing: border-box; }
-
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #f0f0f0;
-            color: #1a1a2e;
-            margin: 0;
-        }
-
-        .hidden { display: none !important; }
-
-        /* ── PDF text layer ── */
-        .textLayer { opacity: 0.2; }
-        .textLayer ::selection { background: rgba(79, 70, 229, 0.3); }
-
-        /* ── Viewer layout ── */
-        #viewerContainer {
-            position: absolute;
-            overflow: auto;
-            width: 100%;
-            top: 80px;
-            bottom: 0;
-            background: #e8e8ec;
-        }
-
-        #viewer {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 1rem;
-        }
-
-        .page {
-            position: relative;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            background: white;
-        }
-
-        .page canvas { display: block; }
-
-        /* ── Search bar ── */
-        #search-bar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            padding: 0.875rem 1.25rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
-            border-bottom: 1px solid rgba(0,0,0,0.06);
-        }
-
-        .search-bar-inner {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-        }
-
-        /* ── Upload card ── */
-        .upload-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 2rem;
-            background: #f0f0f0;
-        }
-
-        .upload-card {
-            background: #ffffff;
-            border-radius: 16px;
-            padding: 2.5rem;
-            width: 100%;
-            max-width: 460px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 32px rgba(0,0,0,0.06);
-            border: 1px solid rgba(0,0,0,0.06);
-        }
-
-        .upload-card h1 {
-            font-size: 1.625rem;
-            font-weight: 700;
-            letter-spacing: -0.03em;
-            color: #1a1a2e;
-            margin: 0 0 0.375rem 0;
-            text-align: center;
-        }
-
-        .upload-card .subtitle {
-            font-size: 0.9rem;
-            color: #6b7280;
-            font-weight: 400;
-            margin-bottom: 1.75rem;
-            text-align: center;
-        }
-
-        .file-drop-zone {
-            position: relative;
-            border: 2px dashed #d1d5db;
-            border-radius: 12px;
-            padding: 2rem 1.5rem;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            background: #fafafa;
-            margin-bottom: 1rem;
-        }
-
-        .file-drop-zone:hover { border-color: #1a1a2e; background: #f5f5f7; }
-        .file-drop-zone.dragover { border-color: #1a1a2e; background: #f0f0f5; }
-
-        .file-drop-zone input[type="file"] {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            opacity: 0;
-            cursor: pointer;
-        }
-
-        .file-drop-zone .icon { width: 40px; height: 40px; margin: 0 auto 0.75rem; color: #9ca3af; }
-        .file-drop-zone .label { font-size: 0.875rem; font-weight: 500; color: #374151; }
-        .file-drop-zone .hint { font-size: 0.8rem; color: #9ca3af; margin-top: 0.25rem; }
-
-        .file-name-display {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            color: #1a1a2e;
-            background: #f0f0f5;
-            border-radius: 8px;
-            padding: 0.5rem 0.75rem;
-            margin-bottom: 1rem;
-            display: none;
-            align-items: center;
-            gap: 0.5rem;
-            word-break: break-all;
-        }
-
-        .file-name-display.visible { display: flex; }
-        .file-name-display .file-icon { flex-shrink: 0; width: 16px; height: 16px; color: #ef4444; }
-
-        .btn-primary {
-            width: 100%;
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 10px;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #ffffff;
-            background: #1a1a2e;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            letter-spacing: -0.01em;
-        }
-
-        .btn-primary:hover { background: #2d2d4a; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26, 26, 46, 0.2); }
-        .btn-primary:active { transform: translateY(0); }
-        .btn-primary:disabled { background: #d1d5db; cursor: not-allowed; transform: none; box-shadow: none; }
-
-        /* ── Search bar buttons ── */
-        .btn-search {
-            padding: 0.5rem 1rem;
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.8rem;
-            font-weight: 500;
-            color: #374151;
-            background: #ffffff;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            white-space: nowrap;
-        }
-
-        .btn-search:hover { background: #f5f5f7; border-color: #9ca3af; }
-        .btn-search:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        .btn-back {
-            padding: 0.5rem 0.875rem;
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.8rem;
-            font-weight: 500;
-            color: #374151;
-            background: #ffffff;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            white-space: nowrap;
-        }
-
-        .btn-back:hover { background: #f5f5f7; border-color: #9ca3af; }
-
-        .search-input {
-            flex: 1;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 0.5rem 0.875rem;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.875rem;
-            color: #1a1a2e;
-            background: #ffffff;
-            outline: none;
-            transition: border-color 0.15s ease, box-shadow 0.15s ease;
-        }
-
-        .search-input::placeholder { color: #9ca3af; }
-        .search-input:focus { border-color: #1a1a2e; box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.08); }
-
-        .zoom-select {
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 0.5rem 0.625rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.75rem;
-            font-weight: 500;
-            color: #374151;
-            background: #ffffff;
-            outline: none;
-            cursor: pointer;
-            transition: border-color 0.15s ease;
-        }
-
-        .zoom-select:focus { border-color: #1a1a2e; }
-
-        .match-counter {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.75rem;
-            color: #6b7280;
-            min-width: 90px;
-            text-align: center;
-        }
-
-        /* ── Spinners / loading ── */
-        .spinner {
-            width: 28px;
-            height: 28px;
-            border: 2.5px solid #e5e7eb;
-            border-top-color: #1a1a2e;
-            border-radius: 50%;
-            animation: spin 0.7s linear infinite;
-            margin: 0 auto;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .upload-status-text { font-size: 0.85rem; color: #6b7280; margin-top: 0.75rem; font-weight: 500; }
-
-        .viewer-loading { text-align: center; padding: 3rem 1rem; }
-        .viewer-loading .spinner { width: 36px; height: 36px; }
-        .viewer-loading p { margin-top: 1rem; font-size: 0.875rem; color: #6b7280; font-weight: 500; }
-    </style>
+    <link rel="stylesheet" href="/static/webapp/styles.css">
+    <link rel="shortcut icon" href="/static/favicon/favicon.ico" />
 </head>
 <body>
 
@@ -320,7 +62,7 @@
                 <select id="zoom-select" class="zoom-select">
                     <option value="0.5">50%</option>
                     <option value="0.75">75%</option>
-                    <option value="1" seelected>100%</option>
+                    <option value="1" selected>100%</option>
                     <option value="1.5">150%</option>
                     <option value="2">200%</option>
                 </select>
@@ -336,29 +78,18 @@
         </div>
     </div>
 
-    <!-- ── File input UX ──────────────────────────────────────────────────── -->
-    <script>
-        const dropZone        = document.getElementById('dropZone');
-        const pdfFileInput    = document.getElementById('pdfFile');
-        const fileNameDisplay = document.getElementById('fileNameDisplay');
-        const fileNameText    = document.getElementById('fileNameText');
+    <!-- ── Main app logic ─────────────────────────────────────────────────── -->
+    <script type="module">
+        import {
+            initDropZone,
+            initializeViewer,
+            loadPDF,
+            clearAllHighlights,
+            scrollToMatch,
+            updateMatchCounter,
+            getBackendResults,
+        } from '/static/utils.js';
 
-        pdfFileInput.addEventListener('change', () => {
-            if (pdfFileInput.files.length > 0) {
-                fileNameText.textContent = pdfFileInput.files[0].name;
-                fileNameDisplay.classList.add('visible');
-            } else {
-                fileNameDisplay.classList.remove('visible');
-            }
-        });
-
-        dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('dragover'));
-        dropZone.addEventListener('drop',      ()  => dropZone.classList.remove('dragover'));
-    </script>
-
-    <!-- ── PDF Viewer logic ───────────────────────────────────────────────── -->
-    <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc =
             'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -367,6 +98,7 @@
         const viewerSection  = document.getElementById('viewerSection');
         const uploadForm     = document.getElementById('uploadForm');
         const uploadStatus   = document.getElementById('uploadStatus');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
         const backButton     = document.getElementById('back-to-upload');
         const searchInput    = document.getElementById('search-input');
         const prevButton     = document.getElementById('prev-match');
@@ -375,16 +107,16 @@
         const zoomSelect     = document.getElementById('zoom-select');
 
         // ── Viewer state ──────────────────────────────────────────────────
-        let pdfData                = null;
-        let eventBus               = null;
-        let pdfLinkService         = null;
-        let pdfViewer              = null;
-        let pdfDocument            = null;
-        let documentId             = null;
-        let currentMatchIndex      = 0;
-        let matchResults           = [];
-        let activeHighlights       = [];
-        let selectedHighlightIndex = -1;
+        let pdfData           = null;
+        let pdfLinkService    = null;
+        let pdfViewer         = null;
+        let documentId        = null;
+        let currentMatchIndex = 0;
+        let matchResults      = [];
+        let activeHighlights  = [];
+
+        // ── Init drop zone ────────────────────────────────────────────────
+        initDropZone();
 
         // ── Upload ────────────────────────────────────────────────────────
         uploadForm.addEventListener('submit', async (e) => {
@@ -407,8 +139,8 @@
                 viewerSection.classList.remove('hidden');
                 uploadStatus.classList.add('hidden');
 
-                initializeViewer();
-                await loadPDF();
+                ({ pdfLinkService, pdfViewer } = initializeViewer());
+                await loadPDF(pdfData, pdfViewer, pdfLinkService);
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to upload PDF: ' + error.message);
@@ -420,173 +152,25 @@
         backButton.addEventListener('click', () => {
             if (pdfViewer) {
                 try { pdfViewer.setDocument(null); } catch (_) {}
-                pdfViewer     = null;
+                pdfViewer      = null;
                 pdfLinkService = null;
-                eventBus      = null;
             }
-            pdfData                = null;
-            documentId             = null;
-            matchResults           = [];
-            currentMatchIndex      = 0;
-            activeHighlights       = [];
-            selectedHighlightIndex = -1;
+            pdfData           = null;
+            documentId        = null;
+            matchResults      = [];
+            currentMatchIndex = 0;
+            activeHighlights  = [];
 
             document.getElementById('viewer').innerHTML = '';
             searchInput.value = '';
-            updateMatchCounter();
+            updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
             uploadForm.reset();
             fileNameDisplay.classList.remove('visible');
             viewerSection.classList.add('hidden');
             uploadSection.classList.remove('hidden');
         });
 
-        // ── Initialize PDF.js ─────────────────────────────────────────────
-        function initializeViewer() {
-            eventBus       = new pdfjsViewer.EventBus();
-            pdfLinkService = new pdfjsViewer.PDFLinkService({ eventBus });
-
-            pdfViewer = new pdfjsViewer.PDFViewer({
-                container:         document.getElementById('viewerContainer'),
-                viewer:            document.getElementById('viewer'),
-                eventBus,
-                linkService:       pdfLinkService,
-                textLayerMode:     1,
-                removePageBorders: false,
-            });
-
-            pdfLinkService.setViewer(pdfViewer);
-        }
-
-        // ── PDF Loading ───────────────────────────────────────────────────
-        async function loadPDF() {
-            const loading = document.getElementById('loading');
-            loading.style.display = 'block';
-            try {
-                const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-                pdfDocument = await loadingTask.promise;
-                pdfViewer.setDocument(pdfDocument);
-                pdfLinkService.setDocument(pdfDocument);
-                pdfViewer.currentScaleValue = '1';
-                loading.style.display = 'none';
-            } catch (error) {
-                console.error('Error loading PDF:', error);
-                loading.innerHTML = '<p style="color:#dc2626;font-family:Inter,sans-serif">Error loading PDF</p>';
-            }
-        }
-
-        // ── Highlight rendering ───────────────────────────────────────────
-
-        function clearAllHighlights() {
-            document.querySelectorAll('.bbox-highlight').forEach(el => el.remove());
-        }
-
-        // Convert pdfium coords (bottom-left origin) to PDF.js viewport coords (top-left origin)
-        function pdfiumRectsToViewport(rects, viewport) {
-            return rects.map(r => {
-                const [x1, y1] = viewport.convertToViewportPoint(r.x, r.y + r.height);
-                const [x2, y2] = viewport.convertToViewportPoint(r.x + r.width, r.y);
-                return {
-                    left:   Math.min(x1, x2),
-                    top:    Math.min(y1, y2),
-                    width:  Math.abs(x2 - x1),
-                    height: Math.abs(y2 - y1),
-                };
-            });
-        }
-
-        function mergeRectsOnSameLine(rects, tolerance = 3) {
-            if (!rects.length) return rects;
-            const sorted = [...rects].sort((a, b) =>
-                Math.abs(a.top - b.top) < tolerance ? a.left - b.left : a.top - b.top
-            );
-            const merged = [];
-            let current = { ...sorted[0] };
-            for (let i = 1; i < sorted.length; i++) {
-                const r          = sorted[i];
-                const sameLine   = Math.abs(r.top - current.top) < tolerance;
-                const closeEnough = r.left <= current.left + current.width + 6;
-                if (sameLine && closeEnough) {
-                    const right  = Math.max(current.left + current.width,  r.left + r.width);
-                    const bottom = Math.max(current.top  + current.height, r.top  + r.height);
-                    current.top    = Math.min(current.top,  r.top);
-                    current.left   = Math.min(current.left, r.left);
-                    current.width  = right  - current.left;
-                    current.height = bottom - current.top;
-                } else {
-                    merged.push(current);
-                    current = { ...r };
-                }
-            }
-            merged.push(current);
-            return merged;
-        }
-
-        function renderHighlight(highlight, index) {
-            const pageView = pdfViewer.getPageView(highlight.page - 1);
-            if (!pageView || !highlight.rects || !highlight.rects.length) return;
-
-            const isSelected    = index === selectedHighlightIndex;
-            const viewport      = pageView.viewport;
-            const viewportRects = pdfiumRectsToViewport(highlight.rects, viewport);
-            const cleanRects    = mergeRectsOnSameLine(viewportRects);
-
-            for (const rect of cleanRects) {
-                const el = document.createElement('div');
-                el.className     = 'bbox-highlight';
-                el.dataset.page  = highlight.page;
-                el.dataset.index = index;
-                el.style.cssText = `
-                    position:       absolute;
-                    left:           ${rect.left}px;
-                    top:            ${rect.top}px;
-                    width:          ${rect.width}px;
-                    height:         ${rect.height}px;
-                    background:     ${isSelected ? 'rgba(255, 140, 0, 0.45)' : 'rgba(255, 220, 0, 0.35)'};
-                    border-radius:  3px;
-                    pointer-events: none;
-                    mix-blend-mode: multiply;
-                `;
-                pageView.div.appendChild(el);
-            }
-        }
-
-        function applyHighlights(results) {
-            clearAllHighlights();
-            activeHighlights = results; // [{page, rects: [{x,y,width,height}]}]
-            results.forEach((h, i) => renderHighlight(h, i));
-        }
-
-        function scrollToMatch(index) {
-            const h = activeHighlights[index];
-            if (!h) return;
-            selectedHighlightIndex = index;
-            clearAllHighlights();
-            renderHighlight(h, index);
-
-            const pageView = pdfViewer.getPageView(h.page - 1);
-            const viewportHeight = pageView.viewport.height;
-
-            // Find the bounding box across all rects
-            const allRects = h.rects;
-            const minY = Math.min(...allRects.map(r => r.y));
-            const maxY = Math.max(...allRects.map(r => r.y + r.height));
-            const padding = 50; // PDF units above the highlight
-            const scrollToY = maxY + padding;
-
-            pdfViewer.scrollPageIntoView({
-                pageNumber: h.page,
-                destArray: [
-                    null,
-                    { name: 'XYZ' },
-                    null,
-                    scrollToY,
-                    null
-                ],
-            });
-        }
-
-        // ── Search flow ───────────────────────────────────────────────────
-
+        // ── Search ────────────────────────────────────────────────────────
         let searchTimeout = null;
 
         searchInput.addEventListener('input', (e) => {
@@ -597,76 +181,44 @@
                     clearAllHighlights();
                     activeHighlights  = [];
                     matchResults      = [];
-                    updateMatchCounter();
+                    updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
                     return;
                 }
 
-                // Backend returns [{page, rects: [{x, y, width, height}]}]
-                const results = await getBackendResults(query);
+                const results = await getBackendResults(query, documentId);
                 if (!results || results.length === 0) {
                     clearAllHighlights();
-                    updateMatchCounter();
+                    updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
                     return;
                 }
 
-                console.log("results for this query: ", query);
-                console.log(results)
+                console.log('results for this query:', query, results);
 
-                matchResults           = results;
-                currentMatchIndex      = 0;
-                selectedHighlightIndex = 0;
+                matchResults      = results;
+                currentMatchIndex = 0;
+                activeHighlights  = results;
 
-                //applyHighlights(results);
-                activeHighlights = results; 
-                scrollToMatch(0);
-                updateMatchCounter();
+                scrollToMatch(0, activeHighlights, pdfViewer);
+                updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
             }, 300);
         });
 
-        async function getBackendResults(query) {
-            try {
-                const res = await fetch(
-                    `/api/search?q=${encodeURIComponent(query)}&id=${encodeURIComponent(documentId)}`
-                );
-                if (!res.ok) throw new Error('Search failed');
-                return await res.json();
-            } catch (err) {
-                console.error('Backend search error:', err);
-                return null;
-            }
-        }
-
         // ── Navigation ────────────────────────────────────────────────────
-
         prevButton.addEventListener('click', () => {
             if (!matchResults.length || currentMatchIndex === 0) return;
             currentMatchIndex--;
-            scrollToMatch(currentMatchIndex);
-            updateMatchCounter();
+            scrollToMatch(currentMatchIndex, activeHighlights, pdfViewer);
+            updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
         });
 
         nextButton.addEventListener('click', () => {
             if (!matchResults.length || currentMatchIndex >= matchResults.length - 1) return;
             currentMatchIndex++;
-            scrollToMatch(currentMatchIndex);
-            updateMatchCounter();
+            scrollToMatch(currentMatchIndex, activeHighlights, pdfViewer);
+            updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
         });
 
-        function updateMatchCounter() {
-            const total = matchResults.length;
-            if (total === 0) {
-                matchCounter.textContent = searchInput.value.trim() ? 'No matches' : '';
-                prevButton.disabled = true;
-                nextButton.disabled = true;
-            } else {
-                matchCounter.textContent = `${currentMatchIndex + 1} / ${total}`;
-                prevButton.disabled = currentMatchIndex === 0;
-                nextButton.disabled = currentMatchIndex === total - 1;
-            }
-        }
-
         // ── Zoom ──────────────────────────────────────────────────────────
-
         zoomSelect.addEventListener('change', (e) => {
             pdfViewer.currentScaleValue = e.target.value;
         });
