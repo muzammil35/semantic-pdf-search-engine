@@ -26,7 +26,7 @@ The result is a full-stack retrieval pipeline from document ingestion to interac
 ```
 PDF Document
      ↓
-Text Extraction (pdfium-render)
+Text Extraction
      ↓
 Chunking + Embedding Generation
      ↓
