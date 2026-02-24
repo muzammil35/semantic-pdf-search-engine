@@ -158,6 +158,6 @@ serve <filename.pdf>   # Render PDF in browser
 
 ---
 
-## 📄 License
+## License
 
 MIT License
