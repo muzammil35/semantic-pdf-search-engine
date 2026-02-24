@@ -65,7 +65,7 @@ Frontend Highlighting (pdf.js)
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 ### Backend
 - Rust  
@@ -81,7 +81,7 @@ Frontend Highlighting (pdf.js)
 
 ---
 
-## ⚡ Quick Start
+## Quick Start
 
 ### Prerequisites
 
