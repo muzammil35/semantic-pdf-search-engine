@@ -50,12 +50,14 @@
         <div id="search-bar">
             <div class="search-bar-inner">
                 <button id="back-to-upload" class="btn-back">&#8592; New PDF</button>
-                <input
-                    type="text"
-                    id="search-input"
-                    placeholder="Search in PDF..."
-                    class="search-input"
-                />
+                <div class="search-input-wrapper">
+                    <input
+                        type="text"
+                        id="search-input"
+                        placeholder="Search in PDF..."
+                        class="search-input"
+                    />
+                </div>
                 <button id="prev-match" class="btn-search" disabled>&#8592; Prev</button>
                 <button id="next-match" class="btn-search" disabled>Next &#8594;</button>
                 <span id="match-counter" class="match-counter"></span>
@@ -88,6 +90,7 @@
             scrollToMatch,
             updateMatchCounter,
             getBackendResults,
+            waitUntilReady,
         } from '/static/utils.js';
 
         pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -141,6 +144,23 @@
 
                 ({ pdfLinkService, pdfViewer } = initializeViewer());
                 await loadPDF(pdfData, pdfViewer, pdfLinkService);
+                // Disable search while indexing
+                searchInput.disabled = true;
+                searchInput.placeholder = 'Embedding PDF, please wait...';
+
+                // Create spinner element
+                const spinner = document.createElement('div');
+                spinner.classList.add('spinner');
+
+                // Append spinner to the parent wrapper (.search-bar-inner)
+                searchInput.parentNode.appendChild(spinner);
+
+                // Poll until backend is ready
+                await waitUntilReady(documentId);
+
+                spinner.remove();
+                searchInput.disabled = false;
+                searchInput.placeholder = 'Search in PDF...';
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to upload PDF: ' + error.message);
@@ -172,9 +192,17 @@
 
         // ── Search ────────────────────────────────────────────────────────
         let searchTimeout = null;
+        let searchAbortController = null; // 
 
         searchInput.addEventListener('input', (e) => {
             clearTimeout(searchTimeout);
+
+            // Cancel any in-flight request immediately
+            if (searchAbortController) {
+                searchAbortController.abort();
+                searchAbortController = null;
+            }
+
             searchTimeout = setTimeout(async () => {
                 const query = e.target.value.trim();
                 if (!query) {
@@ -185,21 +213,34 @@
                     return;
                 }
 
-                const results = await getBackendResults(query, documentId);
-                if (!results || results.length === 0) {
-                    clearAllHighlights();
+                // Create a new controller for this request
+                searchAbortController = new AbortController();
+
+                try {
+                    const results = await getBackendResults(query, documentId, searchAbortController.signal); 
+                    searchAbortController = null;
+
+                    if (!results || results.length === 0) {
+                        clearAllHighlights();
+                        updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
+                        return;
+                    }
+
+                    console.log('results for this query:', query, results);
+
+                    matchResults      = results;
+                    currentMatchIndex = 0;
+                    activeHighlights  = results;
+
+                    scrollToMatch(0, activeHighlights, pdfViewer);
                     updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
-                    return;
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        console.log('Search request cancelled:', query);
+                        return; // Silently ignore — a newer request is already in flight
+                    }
+                    console.error('Search error:', error);
                 }
-
-                console.log('results for this query:', query, results);
-
-                matchResults      = results;
-                currentMatchIndex = 0;
-                activeHighlights  = results;
-
-                scrollToMatch(0, activeHighlights, pdfViewer);
-                updateMatchCounter(matchResults, currentMatchIndex, searchInput, prevButton, nextButton, matchCounter);
             }, 300);
         });
 

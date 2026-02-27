@@ -361,8 +361,6 @@ async fn search_with_bboxes(
                 .iter()
                 .map(|(_, ch)| *ch)
                 .collect();
-            println!("[fuzzy match]   {:?}", fuzzy_str);
-            println!("[backend match] {:?}", search_result.text);
 
             let pdf_char_indices: Vec<usize> = char_entries[entry_start..entry_end]
                 .iter()

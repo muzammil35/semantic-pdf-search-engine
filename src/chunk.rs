@@ -4,6 +4,7 @@ use lopdf::Document;
 use regex::Regex;
 use text_splitter::TextSplitter;
 use unicode_segmentation::UnicodeSegmentation;
+use rayon::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -16,7 +17,115 @@ pub enum PdfSource {
     Bytes(Vec<u8>),
 }
 
+use rayon::prelude::*;
+
 pub fn extract_and_chunk(pdf_source: PdfSource) -> Result<Vec<Chunk>> {
+    // Load the PDF
+    let doc = match pdf_source {
+        PdfSource::Path(path) => Document::load(path)?,
+        PdfSource::Bytes(vec) => Document::load_mem(&vec)?,
+    };
+
+    let pages = doc.get_pages();
+    
+    // Collect page numbers into a Vec for parallel iteration
+    let page_numbers: Vec<u32> = pages.keys().copied().collect();
+    
+    let splitter = TextSplitter::new(500); // chunk size
+
+    // Parallel iteration over page numbers
+    let chunks: Vec<Chunk> = page_numbers
+        .par_iter()
+        .flat_map(|&page_num| {
+            // Extract text for this page
+            if let Ok(text) = doc.extract_text(&[page_num]) {
+                splitter
+                    .chunks(&text)
+                    .filter_map(|chunk| {
+                        if is_valid_chunk(chunk) {
+                            Some(Chunk {
+                                content: chunk.to_string(),
+                                page: page_num as u16,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            }
+        })
+        .collect();
+    Ok(chunks)
+}
+
+// Optimized validation function
+fn is_valid_chunk(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.len() < 50 { 
+        return false; 
+    }
+
+    // Count words, alphabetic chars, and sentence endings in one pass
+    let mut words = 0;
+    let mut alpha = 0;
+    let mut sentence_endings = 0;
+
+    let mut last_char_was_whitespace = true;
+    for c in trimmed.chars() {
+        if c.is_alphabetic() { 
+            alpha += 1; 
+        }
+        if matches!(c, '.' | '!' | '?') { 
+            sentence_endings += 1; 
+        }
+        if c.is_whitespace() {
+            last_char_was_whitespace = true;
+        } else if last_char_was_whitespace {
+            words += 1;
+            last_char_was_whitespace = false;
+        }
+    }
+
+    // More lenient checks
+    if words < 8 { 
+        return false; 
+    }
+    
+    let alpha_ratio = alpha as f64 / trimmed.len() as f64;
+    if alpha_ratio < 0.5 {
+        return false;
+    }
+
+    // Filter single-word artifacts
+    let single_word_artifacts = ["foreword", "appendix", "index", "references"];
+    let lower = trimmed.to_lowercase();
+    if single_word_artifacts.iter().any(|&w| lower == w) {
+        return false;
+    }
+
+    // Filter excessive ellipsis
+    let ellipsis_count = trimmed.matches("...").count() + trimmed.matches("[...]").count();
+    if ellipsis_count > 2 { 
+        return false; 
+    }
+
+    // Ensure meaningful content
+    !looks_like_code(trimmed)
+}
+
+// Helper function to detect code-like content
+fn looks_like_code(text: &str) -> bool {
+    let code_indicators = ["{", "}", "function", "var ", "const ", "let ", "=>", "//"];
+    let indicator_count = code_indicators.iter()
+        .filter(|&&indicator| text.contains(indicator))
+        .count();
+    
+    indicator_count >= 3
+}
+
+pub fn extract_and_chunk_(pdf_source: PdfSource) -> Result<Vec<Chunk>> {
     let doc = match pdf_source {
         PdfSource::Path(path) => Document::load(path)?,
         PdfSource::Bytes(vec) => Document::load_mem(&vec)?,
@@ -32,32 +141,20 @@ pub fn extract_and_chunk(pdf_source: PdfSource) -> Result<Vec<Chunk>> {
         if let Ok(text) = doc.extract_text(&[page_num]) {
             let chunk_texts: Vec<_> = splitter.chunks(&text).collect();
 
-            let mut filtered_count = 0;
-
             for chunk in chunk_texts {
                 if is_valid_chunk(&chunk) {
                     chunks.push(Chunk {
                         content: chunk.to_string(),
                         page: (page_num) as u16,
                     });
-                } else {
-                    filtered_count += 1;
-                    println!("FILTERED: {:?}", &chunk);
                 }
             }
-            println!("Filtered out {} chunks", filtered_count);
         }
     }
-
-    println!("Created {} chunks", chunks.len());
-    for (i, chunk) in chunks.iter().enumerate() {
-        println!("\n--- Chunk {} ---\n{}", i + 1, chunk.content);
-    }
-
     Ok(chunks)
 }
 
-fn is_valid_chunk(text: &str) -> bool {
+fn is_valid_chunk_(text: &str) -> bool {
     let trimmed = text.trim();
 
     // 1. Minimum length check (at least 50 characters for meaningful content)
@@ -125,7 +222,7 @@ fn has_complete_sentence(text: &str) -> bool {
         && text.chars().next().map_or(false, |c| c.is_uppercase())
 }
 
-fn looks_like_code(text: &str) -> bool {
+fn looks_like_code_(text: &str) -> bool {
     // Common code patterns
     let code_indicators = [
         "//",

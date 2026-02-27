@@ -21,15 +21,45 @@ pub async fn search_with_bboxes(
         return Ok(Json(vec![]));
     }
 
-    let file_name = resolve_file_name(&state, &params.id).await?;
-    let search_results = run_search_api(&state.qdrant, &file_name, &params.q).await?;
+    // --- Resolve file name ---
+    let file_name = match resolve_file_name(&state, &params.id).await {
+        Ok(name) => name,
+        Err(e) => {
+            eprintln!("Error resolving file name for id {}: {:?}", params.id, e);
+            return Err(AppError::from(anyhow::anyhow!("Error resolving file name for id {}: {:?}", params.id, e)))
+        }
+    };
+
+    // --- Run search API ---
+    let search_results = match run_search_api(&state.qdrant, &file_name, &params.q).await {
+        Ok(results) => results,
+        Err(e) => {
+            eprintln!("Error querying Qdrant for file '{}', query '{}': {:?}", file_name, params.q, e);
+            return Err(AppError::from(anyhow::anyhow!("Error querying Qdrant for file '{}', query '{}': {:?}", file_name, params.q, e)))
+        }
+    };
 
     if search_results.is_empty() {
         return Ok(Json(vec![]));
     }
 
-    let bytes = get_pdf_bytes(&state, &params.id).await?;
-    let highlights = compute_highlights(&bytes, &search_results)?;
+    // --- Get PDF bytes ---
+    let bytes = match get_pdf_bytes(&state, &params.id).await {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Error getting PDF bytes for id {}: {:?}", params.id, e);
+            return Err(AppError::from(anyhow::anyhow!("Error getting PDF bytes for id {}: {:?}", params.id, e)))
+        }
+    };
+
+    // --- Compute highlights ---
+    let highlights = match compute_highlights(&bytes, &search_results) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("Error computing highlights for file '{}': {:?}", file_name, e);
+            return Err(AppError::from(anyhow::anyhow!("Error computing highlights for file '{}': {:?}", file_name, e)))
+        }
+    };
 
     Ok(Json(highlights))
 }
@@ -60,7 +90,9 @@ async fn run_search_api(client: &Qdrant, file_name: &str, query: &str) -> Result
         return Ok(vec![]);
     }
 
-    let resp = qdrant::run_query(client, "embedded_pdfs", file_name, query).await?;
+    let resp = qdrant::run_query(client, "embedded_pdfs", file_name, query)
+        .await
+        .map_err(|e| anyhow::anyhow!("Qdrant query failed: {:?}", e))?;
 
     let results = resp
         .result
@@ -82,7 +114,8 @@ async fn run_search_api(client: &Qdrant, file_name: &str, query: &str) -> Result
 
 fn compute_highlights(bytes: &[u8], search_results: &[SearchResult]) -> Result<Vec<PageHighlight>> {
     let pdfium = get_pdfium();
-    let doc = pdfium.load_pdf_from_byte_slice(bytes, None)?;
+    let doc = pdfium.load_pdf_from_byte_slice(bytes, None)
+        .map_err(|e| anyhow::anyhow!("PDFium load failed: {:?}", e))?;
     let mut highlights: Vec<PageHighlight> = Vec::new();
 
     for search_result in search_results {
@@ -90,11 +123,17 @@ fn compute_highlights(bytes: &[u8], search_results: &[SearchResult]) -> Result<V
 
         let page = match doc.pages().get(page_idx) {
             Ok(p) => p,
-            Err(_) => continue,
+            Err(_) => {
+                eprintln!("Invalid page index {} for PDF", page_idx);
+                continue;
+            }
         };
         let text_page = match page.text() {
             Ok(t) => t,
-            Err(_) => continue,
+            Err(_) => {
+                eprintln!("Failed to get text for page {}", page_idx + 1);
+                continue;
+            }
         };
 
         let needle_chars: Vec<char> = search_result.text.to_lowercase().chars().collect();
@@ -121,25 +160,22 @@ fn compute_highlights(bytes: &[u8], search_results: &[SearchResult]) -> Result<V
             .collect();
 
         for (entry_start, entry_end, _score) in snapped_matches {
-            let fuzzy_str: String = char_entries[entry_start..entry_end]
-                .iter()
-                .map(|(_, ch)| *ch)
-                .collect();
-            println!("[fuzzy match]   {:?}", fuzzy_str);
-            println!("[backend match] {:?}", search_result.text);
 
             let pdf_char_indices: Vec<usize> = char_entries[entry_start..entry_end]
                 .iter()
                 .map(|(pdf_idx, _)| *pdf_idx)
                 .collect();
 
-            if let Ok(rects) = extract_char_bboxes(&text_page, &pdf_char_indices) {
-                if !rects.is_empty() {
-                    highlights.push(PageHighlight {
-                        page: search_result.page as usize,
-                        rects,
-                    });
-                }
+            match extract_char_bboxes(&text_page, &pdf_char_indices) {
+                Ok(rects) if !rects.is_empty() => highlights.push(PageHighlight {
+                    page: search_result.page as usize,
+                    rects,
+                }),
+                Ok(_) => continue,
+                Err(e) => eprintln!(
+                    "Failed to extract bounding boxes for page {}: {:?}",
+                    search_result.page, e
+                ),
             }
         }
     }

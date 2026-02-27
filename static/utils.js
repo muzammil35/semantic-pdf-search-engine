@@ -194,16 +194,32 @@ export function updateMatchCounter(matchResults, currentMatchIndex, searchInput,
 }
 
 // ── Backend search ────────────────────────────────────────────────────────────
+export async function getBackendResults(query, documentId, signal) {
+    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&id=${documentId}`, {
+        signal // 👈 fetch will throw AbortError if cancelled
+    });
+    if (!response.ok) throw new Error('Search failed');
+    return response.json();
+}
 
-export async function getBackendResults(query, documentId) {
-    try {
-        const res = await fetch(
-            `/api/search?q=${encodeURIComponent(query)}&id=${encodeURIComponent(documentId)}`
-        );
-        if (!res.ok) throw new Error('Search failed');
-        return await res.json();
-    } catch (err) {
-        console.error('Backend search error:', err);
-        return null;
+// ── Poll Backend ────────────────────────────────────────────────────────────
+export async function waitUntilReady(docId, intervalMs = 500, timeoutMs = 60000) {
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+        try {
+            const res = await fetch(`/api/ready?id=${docId}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const data = await res.json();
+            if (data.ready) return;
+        } catch (err) {
+            console.error("Polling error:", err);
+            // Optional: decide if you want to break instead
+        }
+
+        await new Promise(r => setTimeout(r, intervalMs));
     }
+
+    throw new Error('Timed out waiting for PDF to be indexed');
 }

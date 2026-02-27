@@ -5,7 +5,7 @@ mod handlers;
 mod pdf;
 mod types;
 
-use std::net::SocketAddr;
+use std::{collections::HashSet, net::SocketAddr};
 use std::sync::Arc;
 use std::collections::HashMap;
 use std::fs;
@@ -22,13 +22,14 @@ use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 use vb::qdrant;
 
-use types::{AppState, IdToBytesMap, IdToFilenameMap};
-use handlers::{upload::handle_upload, search::search_with_bboxes};
+use types::{AppState, IdToBytesMap, IdToFilenameMap, IdReadyMap};
+use handlers::{upload::handle_upload, search::search_with_bboxes, ready::is_ready};
 
 #[tokio::main]
 async fn main() {
     let id_map: IdToFilenameMap = Arc::new(RwLock::new(HashMap::new()));
     let bytes_map: IdToBytesMap = Arc::new(RwLock::new(HashMap::new()));
+    let ready_set: IdReadyMap = Arc::new(RwLock::new(HashSet::new()));
 
     let qdrant_client = Qdrant::from_url("http://localhost:6334")
         .build()
@@ -41,12 +42,14 @@ async fn main() {
         id_map,
         bytes_map,
         qdrant: Arc::new(qdrant_client),
+        ready_set,
     };
 
     let app = Router::new()
         .route("/", get(index))
         .route("/upload", post(handle_upload))
         .route("/api/search", get(search_with_bboxes))
+        .route("/api/ready", get(is_ready))
         .nest_service("/static", ServeDir::new("static"))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .with_state(state);

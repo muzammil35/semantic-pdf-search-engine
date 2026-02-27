@@ -46,6 +46,7 @@ pub async fn handle_upload(
         let filename_clone = filename.clone();
         let id_clone = id.clone();
         let id_map_clone = state.id_map.clone();
+        let ready_set_clone = state.ready_set.clone();
         let qdrant = state.qdrant.clone();
 
         tokio::spawn(async move {
@@ -54,12 +55,16 @@ pub async fn handle_upload(
                 Ok(unique_filename) => {
                     println!("Processing done: {:?}", start.elapsed());
                     let mut map = id_map_clone.write().await;
+                    let mut set = ready_set_clone.write().await;
+                    set.insert(id_clone.clone());
                     map.insert(id_clone, unique_filename);
                 }
                 Err(e) => {
                     eprintln!("Processing failed: {:?}", e);
                     let mut map = id_map_clone.write().await;
+                    let mut set = ready_set_clone.write().await;
                     map.insert(id_clone, "failed".to_string());
+                    set.insert("failed".to_string());
                 }
             }
         });
